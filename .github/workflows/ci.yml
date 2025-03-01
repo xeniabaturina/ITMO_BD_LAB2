@@ -86,12 +86,17 @@ jobs:
         path = experiments/random_forest.sav
         EOF
         
+        # Display the config file for debugging
+        echo "Contents of config.ini:"
+        cat config.ini
+        
     - name: Prepare data
       run: |
         mkdir -p experiments
         python src/preprocess.py
         
         # Verify data files were created
+        echo "Contents of data directory:"
         ls -la data/
         
     - name: Run tests
@@ -106,9 +111,18 @@ jobs:
         
     - name: Train model
       run: |
+        # Verify config.ini before training
+        echo "Contents of config.ini before training:"
+        cat config.ini
+        
+        # Verify data files exist
+        echo "Checking if data files exist:"
+        ls -la data/
+        
         python src/train.py
         
         # Verify model file was created
+        echo "Contents of experiments directory:"
         ls -la experiments/
         
     - name: Set up Docker Buildx
