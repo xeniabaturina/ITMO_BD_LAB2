@@ -40,6 +40,27 @@ jobs:
           echo "IMAGE_TAG=latest" >> $GITHUB_ENV
         fi
         
+    - name: Create GitHub Actions config.ini
+      run: |
+        cat > config.ini << EOF
+        [DATA]
+        x_data = data/Penguins_X.csv
+        y_data = data/Penguins_y.csv
+        
+        [SPLIT_DATA]
+        x_train = data/Train_Penguins_X.csv
+        y_train = data/Train_Penguins_y.csv
+        x_test = data/Test_Penguins_X.csv
+        y_test = data/Test_Penguins_y.csv
+        
+        [RANDOM_FOREST]
+        n_estimators = 100
+        max_depth = None
+        min_samples_split = 2
+        min_samples_leaf = 1
+        path = experiments/random_forest.sav
+        EOF
+        
     - name: Pull Docker image
       run: |
         docker pull ${{ secrets.DOCKERHUB_USERNAME }}/penguin-classifier:${IMAGE_TAG}
@@ -66,6 +87,7 @@ jobs:
           -v $(pwd)/logs:/app/logs \
           -v $(pwd)/results:/app/results \
           -v $(pwd)/experiments:/app/experiments \
+          -v $(pwd)/config.ini:/app/config.ini \
           ${{ secrets.DOCKERHUB_USERNAME }}/penguin-classifier:${IMAGE_TAG}
           
         echo "Deployed container from image: ${{ secrets.DOCKERHUB_USERNAME }}/penguin-classifier:${IMAGE_TAG}"
