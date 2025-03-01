@@ -1,0 +1,17 @@
+version: '3'
+
+services:
+  penguin-classifier:
+    build: .
+    image: penguin-classifier:latest
+    container_name: penguin-classifier
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./results:/app/results
+      - ./experiments:/app/experiments
+    ports:
+      - "5000:5000"
+    environment:
+      - PYTHONPATH=/app
+    command: python src/api.py
