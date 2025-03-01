@@ -213,6 +213,37 @@ jobs:
           exit 1
         fi
         
+    - name: Test with sample test files
+      if: env.HEALTH_CHECK_FAILED != 'true'
+      run: |
+        echo "Testing with sample test files from tests/ directory..."
+        
+        # Test with test_0.json
+        echo "Testing with test_0.json..."
+        TEST_DATA=$(cat tests/test_0.json)
+        X_DATA=$(echo $TEST_DATA | jq -c '.X[0]')
+        
+        PREDICTION=$(curl -s -X POST -H "Content-Type: application/json" -d "$X_DATA" http://localhost:5000/predict)
+        echo "Prediction for test_0.json: $PREDICTION"
+        
+        EXPECTED_SPECIES=$(echo $TEST_DATA | jq -r '.y[0].species')
+        PREDICTED_SPECIES=$(echo $PREDICTION | jq -r '.predicted_species')
+        
+        echo "Expected species: $EXPECTED_SPECIES, Predicted species: $PREDICTED_SPECIES"
+        
+        # Test with test_1.json
+        echo "Testing with test_1.json..."
+        TEST_DATA=$(cat tests/test_1.json)
+        X_DATA=$(echo $TEST_DATA | jq -c '.X[0]')
+        
+        PREDICTION=$(curl -s -X POST -H "Content-Type: application/json" -d "$X_DATA" http://localhost:5000/predict)
+        echo "Prediction for test_1.json: $PREDICTION"
+        
+        EXPECTED_SPECIES=$(echo $TEST_DATA | jq -r '.y[0].species')
+        PREDICTED_SPECIES=$(echo $PREDICTION | jq -r '.predicted_species')
+        
+        echo "Expected species: $EXPECTED_SPECIES, Predicted species: $PREDICTED_SPECIES"
+        
     - name: Update deployment status
       if: always()
       run: |
@@ -234,13 +265,29 @@ jobs:
         - Deployment Time: $(date)
         
         ## Test Results
-        - Health Check: Passed
+        - Health Check: $([ "$HEALTH_CHECK_FAILED" == "true" ] && echo "Failed" || echo "Passed")
         - Prediction API: Passed
+        - Sample Test Files: Tested
         
         ## Sample Prediction
         \`\`\`json
-        $(cat test_results/prediction_test.json)
+        $(cat test_data.json)
         \`\`\`
+        
+        ## Response
+        \`\`\`json
+        $PREDICTION
+        \`\`\`
+        
+        ## Sample Test Files Results
+        
+        ### test_0.json
+        - Expected species: $(cat tests/test_0.json | jq -r '.y[0].species')
+        - Input data: \`$(cat tests/test_0.json | jq -c '.X[0]')\`
+        
+        ### test_1.json
+        - Expected species: $(cat tests/test_1.json | jq -r '.y[0].species')
+        - Input data: \`$(cat tests/test_1.json | jq -c '.X[0]')\`
         EOF
         
         echo "Generated test report"
@@ -255,4 +302,4 @@ jobs:
       if: always()
       run: |
         docker stop penguin-classifier || true
-        docker rm penguin-classifier || true 
+        docker rm penguin-classifier || true

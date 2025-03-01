@@ -125,6 +125,19 @@ jobs:
         echo "Contents of experiments directory:"
         ls -la experiments/
         
+    - name: Run functional tests
+      run: |
+        echo "Running smoke tests on the trained model..."
+        python src/predict.py -t smoke
+        
+        echo "Running functional tests on the trained model..."
+        python src/predict.py -t func
+        
+        # Display test results
+        echo "Test results:"
+        ls -la results/
+        cat results/prediction_results_*.json | jq .
+        
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v2
       
@@ -177,4 +190,4 @@ jobs:
         path: |
           experiments/
           htmlcov/
-          dev_sec_ops.yml 
+          dev_sec_ops.yml
