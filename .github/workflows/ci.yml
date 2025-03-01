@@ -130,20 +130,32 @@ jobs:
       
     - name: Login to DockerHub
       if: github.event_name != 'pull_request'
+      id: docker_login
       uses: docker/login-action@v2
+      continue-on-error: true
       with:
         username: ${{ secrets.DOCKERHUB_USERNAME }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
+        
+    - name: Check Docker login status
+      if: github.event_name != 'pull_request'
+      run: |
+        if [ "${{ steps.docker_login.outcome }}" != "success" ]; then
+          echo "::warning::Failed to log in to DockerHub. The Docker image will be built but not pushed."
+          echo "DOCKER_PUSH=false" >> $GITHUB_ENV
+        else
+          echo "DOCKER_PUSH=true" >> $GITHUB_ENV
+        fi
         
     - name: Build and push Docker image
       uses: docker/build-push-action@v4
       with:
         context: .
-        push: ${{ github.event_name != 'pull_request' }}
+        push: ${{ env.DOCKER_PUSH == 'true' && github.event_name != 'pull_request' }}
         tags: ${{ secrets.DOCKERHUB_USERNAME }}/penguin-classifier:latest,${{ secrets.DOCKERHUB_USERNAME }}/penguin-classifier:${{ github.sha }}
         
     - name: Update dev_sec_ops.yml
-      if: github.event_name != 'pull_request'
+      if: env.DOCKER_PUSH == 'true' && github.event_name != 'pull_request'
       run: |
         # Get Docker image digest
         DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' ${{ secrets.DOCKERHUB_USERNAME }}/penguin-classifier:latest | cut -d'@' -f2)

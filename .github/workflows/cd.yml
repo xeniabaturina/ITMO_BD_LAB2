@@ -75,9 +75,20 @@ jobs:
         touch ./experiments/random_forest.sav
         
     - name: Pull Docker image
+      id: docker_pull
+      continue-on-error: true
       run: |
         docker pull ${{ secrets.DOCKERHUB_USERNAME }}/penguin-classifier:${IMAGE_TAG}
         echo "Pulled Docker image: ${{ secrets.DOCKERHUB_USERNAME }}/penguin-classifier:${IMAGE_TAG}"
+        
+    - name: Check Docker pull status
+      run: |
+        if [ "${{ steps.docker_pull.outcome }}" != "success" ]; then
+          echo "::error::Failed to pull Docker image. This could be due to authentication issues or the image not being available."
+          echo "::error::Please check your DockerHub credentials in GitHub Secrets (DOCKERHUB_USERNAME and DOCKERHUB_TOKEN)."
+          echo "::error::If you haven't created a DockerHub repository yet, please create one at https://hub.docker.com/repositories"
+          exit 1
+        fi
         
     - name: Deploy container
       run: |
