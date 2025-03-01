@@ -256,6 +256,14 @@ class TestTraining(unittest.TestCase):
             "X_test": self.X_test_path,
             "y_test": self.y_test_path,
         }
+        # Add RANDOM_FOREST section to the mock config
+        mock_config["RANDOM_FOREST"] = {
+            "n_estimators": "100",
+            "max_depth": "None",
+            "min_samples_split": "2",
+            "min_samples_leaf": "1",
+            "path": "experiments/random_forest.sav"
+        }
 
         # Patch the ConfigParser.read method
         with patch("configparser.ConfigParser.read", return_value=None):
