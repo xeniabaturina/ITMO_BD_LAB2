@@ -1,0 +1,124 @@
+pipeline {
+    agent any
+    
+    environment {
+        DOCKER_HUB_CREDS = credentials('docker-hub-credentials')
+        DOCKER_IMAGE_NAME = 'penguin-classifier'
+        DOCKER_IMAGE_TAG = "${env.BUILD_NUMBER}"
+        DOCKER_HUB_REPO = "${env.DOCKER_HUB_USERNAME}/${DOCKER_IMAGE_NAME}"
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+                echo "Checked out code from repository"
+            }
+        }
+        
+        stage('Install Dependencies') {
+            steps {
+                sh 'pip install -r requirements.txt'
+                echo "Installed dependencies"
+            }
+        }
+        
+        stage('Run Tests') {
+            steps {
+                sh 'python -m pytest src/unit_tests/'
+                echo "All tests passed"
+            }
+        }
+        
+        stage('Calculate Test Coverage') {
+            steps {
+                sh 'python -m coverage run -m pytest src/unit_tests/'
+                sh 'python -m coverage report'
+                sh 'python -m coverage html'
+                echo "Generated test coverage report"
+            }
+        }
+        
+        stage('Prepare Data') {
+            steps {
+                sh 'mkdir -p data'
+                sh 'mkdir -p experiments'
+                sh 'python src/preprocess.py'
+                echo "Prepared data for model training"
+            }
+        }
+        
+        stage('Train Model') {
+            steps {
+                sh 'python src/train.py'
+                echo "Trained model successfully"
+            }
+        }
+        
+        stage('Build Docker Image') {
+            steps {
+                sh 'docker build -t ${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG} .'
+                sh 'docker tag ${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG} ${DOCKER_HUB_REPO}:${DOCKER_IMAGE_TAG}'
+                sh 'docker tag ${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG} ${DOCKER_HUB_REPO}:latest'
+                echo "Built Docker image ${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}"
+            }
+        }
+        
+        stage('Generate DevSecOps Signatures') {
+            steps {
+                sh '''
+                # Generate signatures file
+                echo "Docker Image: ${DOCKER_HUB_REPO}:${DOCKER_IMAGE_TAG}" > dev_sec_ops.yml
+                echo "Build Number: ${BUILD_NUMBER}" >> dev_sec_ops.yml
+                echo "Last Commits:" >> dev_sec_ops.yml
+                git log -n 5 --pretty=format:"  - %h: %s" >> dev_sec_ops.yml
+                echo "" >> dev_sec_ops.yml
+                
+                # Add test coverage if available
+                if [ -f ".coverage" ]; then
+                    echo "Test Coverage:" >> dev_sec_ops.yml
+                    python -m coverage report --format=total >> dev_sec_ops.yml
+                fi
+                
+                # Add Docker image digest
+                echo "Docker Image Digest:" >> dev_sec_ops.yml
+                docker inspect --format='{{index .RepoDigests 0}}' ${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG} >> dev_sec_ops.yml
+                '''
+                echo "Generated DevSecOps signatures file"
+            }
+        }
+        
+        stage('Push to Docker Hub') {
+            steps {
+                sh 'echo $DOCKER_HUB_CREDS_PSW | docker login -u $DOCKER_HUB_CREDS_USR --password-stdin'
+                sh 'docker push ${DOCKER_HUB_REPO}:${DOCKER_IMAGE_TAG}'
+                sh 'docker push ${DOCKER_HUB_REPO}:latest'
+                echo "Pushed Docker image to Docker Hub: ${DOCKER_HUB_REPO}:${DOCKER_IMAGE_TAG}"
+            }
+        }
+        
+        stage('Trigger CD Pipeline') {
+            steps {
+                build job: 'penguin-classifier-cd', parameters: [
+                    string(name: 'DOCKER_IMAGE_TAG', value: "${DOCKER_IMAGE_TAG}"),
+                    string(name: 'DOCKER_HUB_REPO', value: "${DOCKER_HUB_REPO}")
+                ]
+                echo "Triggered CD pipeline"
+            }
+        }
+    }
+    
+    post {
+        always {
+            archiveArtifacts artifacts: 'dev_sec_ops.yml, htmlcov/**', fingerprint: true
+        }
+        
+        success {
+            echo "CI pipeline completed successfully"
+        }
+        
+        failure {
+            echo "CI pipeline failed"
+        }
+    }
+}
