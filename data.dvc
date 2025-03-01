@@ -1,0 +1,22 @@
+outs:
+- md5: c5a23e34ed87db0b95a21eedf3b68f63
+  size: 15241
+  path: data/penguins.csv
+- md5: d41d8cd98f00b204e9800998ecf8427e
+  size: 0
+  path: data/Penguins_X.csv
+- md5: d41d8cd98f00b204e9800998ecf8427e
+  size: 0
+  path: data/Penguins_y.csv
+- md5: d41d8cd98f00b204e9800998ecf8427e
+  size: 0
+  path: data/Train_Penguins_X.csv
+- md5: d41d8cd98f00b204e9800998ecf8427e
+  size: 0
+  path: data/Train_Penguins_y.csv
+- md5: d41d8cd98f00b204e9800998ecf8427e
+  size: 0
+  path: data/Test_Penguins_X.csv
+- md5: d41d8cd98f00b204e9800998ecf8427e
+  size: 0
+  path: data/Test_Penguins_y.csv 
