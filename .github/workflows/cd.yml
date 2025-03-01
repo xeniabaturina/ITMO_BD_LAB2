@@ -61,17 +61,23 @@ jobs:
         path = experiments/random_forest.sav
         EOF
         
-    - name: Pull Docker image
-      run: |
-        docker pull ${{ secrets.DOCKERHUB_USERNAME }}/penguin-classifier:${IMAGE_TAG}
-        echo "Pulled Docker image: ${{ secrets.DOCKERHUB_USERNAME }}/penguin-classifier:${IMAGE_TAG}"
-        
-    - name: Create deployment directories
+    - name: Create data directories and sample data
       run: |
         mkdir -p ./data
         mkdir -p ./logs
         mkdir -p ./results
         mkdir -p ./experiments
+        
+        # Download sample data
+        curl -o ./data/penguins.csv https://raw.githubusercontent.com/allisonhorst/palmerpenguins/master/inst/extdata/penguins.csv
+        
+        # Create a model file placeholder (will be overwritten by the container)
+        touch ./experiments/random_forest.sav
+        
+    - name: Pull Docker image
+      run: |
+        docker pull ${{ secrets.DOCKERHUB_USERNAME }}/penguin-classifier:${IMAGE_TAG}
+        echo "Pulled Docker image: ${{ secrets.DOCKERHUB_USERNAME }}/penguin-classifier:${IMAGE_TAG}"
         
     - name: Deploy container
       run: |
@@ -95,6 +101,10 @@ jobs:
     - name: Wait for API to be ready
       run: sleep 10
       
+    - name: Check container logs
+      run: |
+        docker logs penguin-classifier
+        
     - name: Test health endpoint
       run: |
         HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:5000/health)
