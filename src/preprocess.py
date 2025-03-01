@@ -52,7 +52,10 @@ class DataMaker:
 
             if os.path.isfile(self.X_path) and os.path.isfile(self.y_path):
                 self.log.info("X and y data is ready")
-                self.config["DATA"] = {"X_data": self.X_path, "y_data": self.y_path}
+                self.config["DATA"] = {
+                    "X_data": "data/Penguins_X.csv",
+                    "y_data": "data/Penguins_y.csv"
+                }
                 with open("config.ini", "w") as configfile:
                     self.config.write(configfile)
                 return True
@@ -91,14 +94,23 @@ class DataMaker:
             self.save_splitted_data(y_test, self.test_path[1])
 
             self.config["SPLIT_DATA"] = {
-                "X_train": self.train_path[0],
-                "y_train": self.train_path[1],
-                "X_test": self.test_path[0],
-                "y_test": self.test_path[1],
+                "X_train": "data/Train_Penguins_X.csv",
+                "y_train": "data/Train_Penguins_y.csv",
+                "X_test": "data/Test_Penguins_X.csv",
+                "y_test": "data/Test_Penguins_y.csv",
             }
+            
+            self.config["RANDOM_FOREST"] = {
+                "n_estimators": "100",
+                "max_depth": "None",
+                "min_samples_split": "2",
+                "min_samples_leaf": "1",
+                "path": "experiments/random_forest.sav"
+            }
+            
             with open("config.ini", "w") as configfile:
                 self.config.write(configfile)
-
+            
             self.log.info("Data split successfully")
             return True
         except Exception as e:
@@ -106,20 +118,24 @@ class DataMaker:
             self.log.error(traceback.format_exc())
             return False
 
-    def save_splitted_data(self, df: pd.DataFrame, path: str) -> bool:
+    def save_splitted_data(self, data, path) -> bool:
         """
-        Save a dataframe to a CSV file.
+        Save the split data to a CSV file.
 
         Args:
-            df (pd.DataFrame): Dataframe to save.
-            path (str): Path to save the dataframe to.
+            data (pandas.DataFrame): Data to save.
+            path (str): Path to save the data.
 
         Returns:
             bool: True if operation is successful, False otherwise.
         """
         try:
-            df.to_csv(path, index=True)
-            return os.path.isfile(path)
+            data.to_csv(path, index=True)
+            if os.path.isfile(path):
+                return True
+            else:
+                self.log.error(f"File {path} is not created")
+                return False
         except Exception as e:
             self.log.error(f"Error in save_splitted_data: {e}")
             self.log.error(traceback.format_exc())
