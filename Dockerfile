@@ -11,26 +11,23 @@ COPY . /app/
 
 RUN mkdir -p logs results experiments data
 
-# Create a default config.ini with relative paths if one doesn't exist
-RUN if [ ! -s config.ini ]; then \
-    echo "[DATA]" > config.ini && \
-    echo "x_data = data/Penguins_X.csv" >> config.ini && \
-    echo "y_data = data/Penguins_y.csv" >> config.ini && \
-    echo "" >> config.ini && \
-    echo "[SPLIT_DATA]" >> config.ini && \
-    echo "x_train = data/Train_Penguins_X.csv" >> config.ini && \
-    echo "y_train = data/Train_Penguins_y.csv" >> config.ini && \
-    echo "x_test = data/Test_Penguins_X.csv" >> config.ini && \
-    echo "y_test = data/Test_Penguins_y.csv" >> config.ini && \
-    echo "" >> config.ini && \
-    echo "[RANDOM_FOREST]" >> config.ini && \
-    echo "n_estimators = 100" >> config.ini && \
-    echo "max_depth = None" >> config.ini && \
-    echo "min_samples_split = 2" >> config.ini && \
-    echo "min_samples_leaf = 1" >> config.ini && \
-    echo "path = experiments/random_forest.sav" >> config.ini; \
-    fi
+# Use template config.ini
+COPY config.ini /app/config.ini.template
+
+# Create a script to initialize the container
+RUN echo '#!/bin/bash\n\
+if [ ! -f /app/config.ini ]; then\n\
+  echo "Using template config.ini"\n\
+  cp /app/config.ini.template /app/config.ini\n\
+fi\n\
+exec "$@"\n\
+' > /app/docker-entrypoint.sh && chmod +x /app/docker-entrypoint.sh
+
+# Add health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:5000/health || exit 1
 
 EXPOSE 5000
 
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
 CMD ["python", "src/api.py"]

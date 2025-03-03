@@ -14,29 +14,31 @@ on:
         default: 'latest'
 
 jobs:
-  deploy-and-test:
+  prepare-deployment:
     runs-on: ubuntu-latest
     if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
-    
+    outputs:
+      image_tag: ${{ steps.set_tag.outputs.tag }}
+      
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
       
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.10'
-        
-    - name: Install dependencies
+    - name: Set Docker image tag
+      id: set_tag
       run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
+        if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+          echo "tag=${{ github.event.inputs.image_tag }}" >> $GITHUB_OUTPUT
+        else
+          echo "tag=latest" >> $GITHUB_OUTPUT
+        fi
+        echo "Using Docker image tag: ${{ steps.set_tag.outputs.tag || github.event.inputs.image_tag || 'latest' }}"
         
-    - name: Download model artifacts from CI
+    - name: Download artifacts from CI
       uses: dawidd6/action-download-artifact@v2
       with:
         workflow: ci.yml
-        name: model-and-reports
+        name: deployment-artifacts
         path: ./
         
     - name: Verify model file
@@ -53,25 +55,7 @@ jobs:
       run: |
         mkdir -p data logs results
         
-    - name: Set up Docker
-      uses: docker/setup-buildx-action@v2
-      
-    - name: Login to DockerHub
-      uses: docker/login-action@v2
-      with:
-        username: ${{ secrets.DOCKERHUB_USERNAME }}
-        password: ${{ secrets.DOCKERHUB_TOKEN }}
-        
-    - name: Set Docker image tag
-      id: set_tag
-      run: |
-        if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-          echo "IMAGE_TAG=${{ github.event.inputs.image_tag }}" >> $GITHUB_ENV
-        else
-          echo "IMAGE_TAG=latest" >> $GITHUB_ENV
-        fi
-        
-    - name: Create GitHub Actions config.ini
+    - name: Create deployment config
       run: |
         cat > config.ini << EOF
         [DATA]
@@ -92,44 +76,112 @@ jobs:
         path = experiments/random_forest.sav
         EOF
         
-    - name: Create data directories and sample data
+    - name: Upload deployment config
+      uses: actions/upload-artifact@v4
+      with:
+        name: deployment-config
+        path: |
+          config.ini
+          experiments/
+          
+  deploy:
+    needs: prepare-deployment
+    runs-on: ubuntu-latest
+    outputs:
+      container_status: ${{ steps.deploy_container.outputs.status }}
+      
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Download deployment config
+      uses: actions/download-artifact@v4
+      with:
+        name: deployment-config
+        
+    - name: Set up Docker
+      uses: docker/setup-buildx-action@v2
+      
+    - name: Login to DockerHub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+        
+    - name: Create test data
       run: |
         mkdir -p ./data
         mkdir -p ./logs
         mkdir -p ./results
-        mkdir -p ./experiments
         
-        # Download sample data
+        # Download sample data for testing
         curl -o ./data/penguins.csv https://raw.githubusercontent.com/allisonhorst/palmerpenguins/master/inst/extdata/penguins.csv
         
-        # Preprocess data to create train/test splits
-        python src/preprocess.py
+        # Create test directories
+        mkdir -p ./tests
         
-        # Verify data files were created
-        echo "Contents of data directory:"
-        ls -la data/
+        # Create test data files if they don't exist
+        if [ ! -f "./tests/test_0.json" ]; then
+          cat > ./tests/test_0.json << EOF
+        {
+          "X": [
+            {
+              "island": "Biscoe",
+              "bill_length_mm": 45.2,
+              "bill_depth_mm": 15.8,
+              "flipper_length_mm": 215.0,
+              "body_mass_g": 5400.0,
+              "sex": "MALE"
+            }
+          ],
+          "y": [
+            {
+              "species": "Gentoo"
+            }
+          ]
+        }
+        EOF
+        fi
         
-        # Verify model file exists
-        echo "Contents of experiments directory:"
-        ls -la experiments/
+        if [ ! -f "./tests/test_1.json" ]; then
+          cat > ./tests/test_1.json << EOF
+        {
+          "X": [
+            {
+              "island": "Torgersen",
+              "bill_length_mm": 39.1,
+              "bill_depth_mm": 18.7,
+              "flipper_length_mm": 181.0,
+              "body_mass_g": 3750.0,
+              "sex": "MALE"
+            }
+          ],
+          "y": [
+            {
+              "species": "Adelie"
+            }
+          ]
+        }
+        EOF
+        fi
         
     - name: Pull Docker image
       id: docker_pull
       continue-on-error: true
       run: |
-        docker pull ${{ secrets.DOCKERHUB_USERNAME }}/penguin-classifier:${IMAGE_TAG}
-        echo "Pulled Docker image: ${{ secrets.DOCKERHUB_USERNAME }}/penguin-classifier:${IMAGE_TAG}"
+        docker pull ${{ secrets.DOCKERHUB_USERNAME }}/penguin-classifier:${{ needs.prepare-deployment.outputs.image_tag }}
+        echo "Pulled Docker image: ${{ secrets.DOCKERHUB_USERNAME }}/penguin-classifier:${{ needs.prepare-deployment.outputs.image_tag }}"
         
     - name: Check Docker pull status
+      if: steps.docker_pull.outcome != 'success'
       run: |
-        if [ "${{ steps.docker_pull.outcome }}" != "success" ]; then
-          echo "::error::Failed to pull Docker image. This could be due to authentication issues or the image not being available."
-          echo "::error::Please check your DockerHub credentials in GitHub Secrets (DOCKERHUB_USERNAME and DOCKERHUB_TOKEN)."
-          echo "::error::If you haven't created a DockerHub repository yet, please create one at https://hub.docker.com/repositories"
-          exit 1
-        fi
+        echo "::error::Failed to pull Docker image. This could be due to authentication issues or the image not being available."
+        echo "::error::Please check your DockerHub credentials in GitHub Secrets (DOCKERHUB_USERNAME and DOCKERHUB_TOKEN)."
+        echo "::error::If you haven't created a DockerHub repository yet, please create one at https://hub.docker.com/repositories"
+        exit 1
         
     - name: Deploy container
+      id: deploy_container
       run: |
         # Stop any running container with the same name
         docker stop penguin-classifier || true
@@ -144,50 +196,75 @@ jobs:
           -v $(pwd)/results:/app/results \
           -v $(pwd)/experiments:/app/experiments \
           -v $(pwd)/config.ini:/app/config.ini \
-          ${{ secrets.DOCKERHUB_USERNAME }}/penguin-classifier:${IMAGE_TAG}
+          ${{ secrets.DOCKERHUB_USERNAME }}/penguin-classifier:${{ needs.prepare-deployment.outputs.image_tag }}
           
-        echo "Deployed container from image: ${{ secrets.DOCKERHUB_USERNAME }}/penguin-classifier:${IMAGE_TAG}"
+        echo "Deployed container from image: ${{ secrets.DOCKERHUB_USERNAME }}/penguin-classifier:${{ needs.prepare-deployment.outputs.image_tag }}"
+        
+        # Check if container is running
+        if docker ps | grep penguin-classifier; then
+          echo "status=success" >> $GITHUB_OUTPUT
+        else
+          echo "status=failure" >> $GITHUB_OUTPUT
+          exit 1
+        fi
         
     - name: Wait for API to be ready
-      run: sleep 10
+      run: |
+        echo "Waiting for API to be ready..."
+        for i in {1..30}; do
+          if curl -s http://localhost:5000/health | grep -q "healthy"; then
+            echo "API is ready!"
+            break
+          fi
+          echo "Waiting... ($i/30)"
+          sleep 2
+          if [ $i -eq 30 ]; then
+            echo "::error::API did not become ready in time"
+            docker logs penguin-classifier
+            exit 1
+          fi
+        done
+        
+  test-deployment:
+    needs: [prepare-deployment, deploy]
+    runs-on: ubuntu-latest
+    if: needs.deploy.outputs.container_status == 'success'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
       
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests pytest
+        
     - name: Check container logs
       run: |
         docker logs penguin-classifier
         
     - name: Test health endpoint
       id: health_check
-      continue-on-error: true
       run: |
         HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:5000/health)
         if [ "$HEALTH_STATUS" != "200" ]; then
           echo "Health check failed with status: $HEALTH_STATUS"
           echo "::error::Health check failed with status: $HEALTH_STATUS"
-          echo "HEALTH_CHECK_FAILED=true" >> $GITHUB_ENV
+          docker logs penguin-classifier
           exit 1
         fi
         echo "Health check passed with status: $HEALTH_STATUS"
         
-    - name: Debug container if health check failed
-      if: env.HEALTH_CHECK_FAILED == 'true'
-      run: |
-        echo "Container logs:"
-        docker logs penguin-classifier
+        # Get health check response
+        HEALTH_RESPONSE=$(curl -s http://localhost:5000/health)
+        echo "Health check response: $HEALTH_RESPONSE"
         
-        echo "Checking if model file exists in container:"
-        docker exec penguin-classifier ls -la /app/experiments/
-        
-        echo "Checking model file size in container:"
-        docker exec penguin-classifier du -h /app/experiments/random_forest.sav || echo "Model file not found in container"
-        
-        echo "Checking config.ini in container:"
-        docker exec penguin-classifier cat /app/config.ini
-        
-        # Try to manually load the model to see the error
-        docker exec penguin-classifier python -c "import pickle; print('Trying to load model...'); f = open('/app/experiments/random_forest.sav', 'rb'); model = pickle.load(f); print('Model loaded successfully')" || echo "Failed to load model"
-        
-    - name: Test prediction endpoint
-      if: env.HEALTH_CHECK_FAILED != 'true'
+    - name: Test prediction endpoint with single sample
       run: |
         # Create test data for prediction
         cat > test_data.json << EOF
@@ -213,93 +290,133 @@ jobs:
           exit 1
         fi
         
-    - name: Test with sample test files
-      if: env.HEALTH_CHECK_FAILED != 'true'
+    - name: Run integration tests
       run: |
-        echo "Testing with sample test files from tests/ directory..."
+        # Create a Python script for integration testing
+        cat > integration_test.py << EOF
+        import requests
+        import json
+        import sys
         
-        # Test with test_0.json
-        echo "Testing with test_0.json..."
-        TEST_DATA=$(cat tests/test_0.json)
-        X_DATA=$(echo $TEST_DATA | jq -c '.X[0]')
+        def test_prediction(test_file, expected_species):
+            # Load test data
+            with open(test_file, 'r') as f:
+                test_data = json.load(f)
+            
+            # Extract first sample
+            sample = test_data['X'][0]
+            
+            # Make prediction request
+            response = requests.post('http://localhost:5000/predict', json=sample)
+            
+            # Check if request was successful
+            if response.status_code != 200:
+                print(f"Error: Received status code {response.status_code}")
+                print(response.text)
+                return False
+                
+            # Parse response
+            result = response.json()
+            
+            # Check if prediction was successful
+            if not result.get('success', False):
+                print(f"Error: Prediction failed - {result.get('error', 'Unknown error')}")
+                return False
+                
+            # Check if species matches expected
+            predicted_species = result.get('predicted_species')
+            if predicted_species != expected_species:
+                print(f"Error: Expected species {expected_species}, but got {predicted_species}")
+                return False
+                
+            print(f"Test passed: Correctly predicted {predicted_species}")
+            return True
+            
+        # Run tests
+        test_files = [
+            ('tests/test_0.json', 'Gentoo'),
+            ('tests/test_1.json', 'Adelie')
+        ]
         
-        PREDICTION=$(curl -s -X POST -H "Content-Type: application/json" -d "$X_DATA" http://localhost:5000/predict)
-        echo "Prediction for test_0.json: $PREDICTION"
-        
-        EXPECTED_SPECIES=$(echo $TEST_DATA | jq -r '.y[0].species')
-        PREDICTED_SPECIES=$(echo $PREDICTION | jq -r '.predicted_species')
-        
-        echo "Expected species: $EXPECTED_SPECIES, Predicted species: $PREDICTED_SPECIES"
-        
-        # Test with test_1.json
-        echo "Testing with test_1.json..."
-        TEST_DATA=$(cat tests/test_1.json)
-        X_DATA=$(echo $TEST_DATA | jq -c '.X[0]')
-        
-        PREDICTION=$(curl -s -X POST -H "Content-Type: application/json" -d "$X_DATA" http://localhost:5000/predict)
-        echo "Prediction for test_1.json: $PREDICTION"
-        
-        EXPECTED_SPECIES=$(echo $TEST_DATA | jq -r '.y[0].species')
-        PREDICTED_SPECIES=$(echo $PREDICTION | jq -r '.predicted_species')
-        
-        echo "Expected species: $EXPECTED_SPECIES, Predicted species: $PREDICTED_SPECIES"
-        
-    - name: Update deployment status
-      if: always()
-      run: |
-        if [ "${{ env.HEALTH_CHECK_FAILED }}" == "true" ]; then
-          echo "::warning::Deployment completed with issues. Health check failed."
-        else
-          echo "Deployment completed successfully!"
-        fi
-        
-    - name: Generate test report
-      run: |
-        # Create a test report
-        mkdir -p test_results
-        cat > test_results/report.md << EOF
-        # Functional Test Report
-        
-        ## Deployment Information
-        - Docker Image: ${{ secrets.DOCKERHUB_USERNAME }}/penguin-classifier:${IMAGE_TAG}
-        - Deployment Time: $(date)
-        
-        ## Test Results
-        - Health Check: $([ "$HEALTH_CHECK_FAILED" == "true" ] && echo "Failed" || echo "Passed")
-        - Prediction API: Passed
-        - Sample Test Files: Tested
-        
-        ## Sample Prediction
-        \`\`\`json
-        $(cat test_data.json)
-        \`\`\`
-        
-        ## Response
-        \`\`\`json
-        $PREDICTION
-        \`\`\`
-        
-        ## Sample Test Files Results
-        
-        ### test_0.json
-        - Expected species: $(cat tests/test_0.json | jq -r '.y[0].species')
-        - Input data: \`$(cat tests/test_0.json | jq -c '.X[0]')\`
-        
-        ### test_1.json
-        - Expected species: $(cat tests/test_1.json | jq -r '.y[0].species')
-        - Input data: \`$(cat tests/test_1.json | jq -c '.X[0]')\`
+        failures = 0
+        for test_file, expected_species in test_files:
+            print(f"Testing {test_file}...")
+            if not test_prediction(test_file, expected_species):
+                failures += 1
+                
+        # Exit with status code based on test results
+        sys.exit(failures)
         EOF
         
-        echo "Generated test report"
+        # Run the integration test
+        python integration_test.py
         
-    - name: Upload test results
+    - name: Test input validation
+      run: |
+        # Test with missing field
+        echo "Testing with missing field..."
+        MISSING_FIELD_RESPONSE=$(curl -s -X POST -H "Content-Type: application/json" -d '{"island": "Biscoe", "bill_length_mm": 45.2}' http://localhost:5000/predict)
+        echo "Response: $MISSING_FIELD_RESPONSE"
+        if [[ $MISSING_FIELD_RESPONSE == *"Missing required fields"* ]]; then
+          echo "Missing field validation test passed"
+        else
+          echo "Missing field validation test failed"
+          exit 1
+        fi
+        
+        # Test with invalid data type
+        echo "Testing with invalid data type..."
+        INVALID_TYPE_RESPONSE=$(curl -s -X POST -H "Content-Type: application/json" -d '{"island": "Biscoe", "bill_length_mm": "not_a_number", "bill_depth_mm": 15.8, "flipper_length_mm": 215.0, "body_mass_g": 5400.0, "sex": "MALE"}' http://localhost:5000/predict)
+        echo "Response: $INVALID_TYPE_RESPONSE"
+        if [[ $INVALID_TYPE_RESPONSE == *"must be a number"* ]]; then
+          echo "Invalid data type validation test passed"
+        else
+          echo "Invalid data type validation test failed"
+          exit 1
+        fi
+        
+  report-results:
+    needs: [prepare-deployment, deploy, test-deployment]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Generate deployment report
+      run: |
+        # Create deployment report
+        cat > deployment_report.md << EOF
+        # Deployment Report
+        
+        ## Deployment Status
+        - **Date:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+        - **Image Tag:** ${{ needs.prepare-deployment.outputs.image_tag }}
+        - **Deployment Status:** ${{ needs.deploy.outputs.container_status == 'success' && 'Success' || 'Failed' }}
+        - **Testing Status:** ${{ needs.test-deployment.result == 'success' && 'Success' || 'Failed' }}
+        
+        ## Details
+        - **Repository:** ${{ github.repository }}
+        - **Workflow:** ${{ github.workflow }}
+        - **Run ID:** ${{ github.run_id }}
+        - **Triggered By:** ${{ github.event_name == 'workflow_dispatch' && 'Manual Trigger' || 'CI Pipeline' }}
+        
+        ## Next Steps
+        - Check the [workflow run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) for detailed logs
+        - Access the API at http://localhost:5000 (if running locally)
+        - Use the /predict endpoint to make predictions
+        EOF
+        
+    - name: Upload deployment report
       uses: actions/upload-artifact@v4
       with:
-        name: test-results
-        path: test_results/
+        name: deployment-report
+        path: deployment_report.md
         
-    - name: Cleanup
-      if: always()
+    - name: Notify on failure
+      if: needs.deploy.outputs.container_status != 'success' || needs.test-deployment.result != 'success'
       run: |
-        docker stop penguin-classifier || true
-        docker rm penguin-classifier || true
+        echo "::error::Deployment or testing failed. Please check the logs for details."
+        echo "::error::Deployment status: ${{ needs.deploy.outputs.container_status }}"
+        echo "::error::Testing status: ${{ needs.test-deployment.result }}"

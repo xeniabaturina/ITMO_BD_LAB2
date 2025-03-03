@@ -7,7 +7,50 @@ on:
     branches: [ main, master ]
 
 jobs:
-  build-test-push:
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      cache-key: ${{ steps.cache-key.outputs.key }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+        
+    - name: Generate cache key
+      id: cache-key
+      run: echo "key=pip-${{ hashFiles('requirements.txt') }}-$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+      
+    - name: Cache Python dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ steps.cache-key.outputs.key }}
+        restore-keys: |
+          pip-${{ hashFiles('requirements.txt') }}-
+          pip-
+          
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest coverage dvc
+        
+    - name: Cache DVC data
+      uses: actions/cache@v3
+      with:
+        path: .dvc/cache
+        key: dvc-${{ hashFiles('data.dvc') }}-$(date +'%Y-%m-%d')
+        restore-keys: |
+          dvc-${{ hashFiles('data.dvc') }}-
+          dvc-
+          
+  data-preparation:
+    needs: setup
     runs-on: ubuntu-latest
     
     steps:
@@ -21,11 +64,17 @@ jobs:
       with:
         python-version: '3.10'
         
+    - name: Restore cached dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ needs.setup.outputs.cache-key }}
+        
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        pip install pytest coverage dvc
+        pip install dvc
         
     - name: Setup DVC
       run: |
@@ -65,7 +114,7 @@ jobs:
           echo "Data files already exist, skipping download"
         fi
         
-    - name: Create GitHub Actions config.ini
+    - name: Create config.ini
       run: |
         cat > config.ini << EOF
         [DATA]
@@ -86,20 +135,50 @@ jobs:
         path = experiments/random_forest.sav
         EOF
         
-        # Display the config file for debugging
-        echo "Contents of config.ini:"
-        cat config.ini
-        
     - name: Prepare data
       run: |
         mkdir -p experiments
         python src/preprocess.py
         
-        # Verify data files were created
-        echo "Contents of data directory:"
-        ls -la data/
+    - name: Upload processed data
+      uses: actions/upload-artifact@v4
+      with:
+        name: processed-data
+        path: |
+          data/
+          config.ini
+          
+  test:
+    needs: [setup, data-preparation]
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
         
-    - name: Run tests
+    - name: Restore cached dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ needs.setup.outputs.cache-key }}
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest coverage
+        
+    - name: Download processed data
+      uses: actions/download-artifact@v4
+      with:
+        name: processed-data
+        
+    - name: Run unit tests
       run: |
         python -m pytest src/unit_tests/
         
@@ -109,21 +188,45 @@ jobs:
         python -m coverage report
         python -m coverage html
         
+    - name: Upload test coverage report
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-report
+        path: htmlcov/
+        
+  train-model:
+    needs: [setup, data-preparation]
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+        
+    - name: Restore cached dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ needs.setup.outputs.cache-key }}
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: Download processed data
+      uses: actions/download-artifact@v4
+      with:
+        name: processed-data
+        
     - name: Train model
       run: |
-        # Verify config.ini before training
-        echo "Contents of config.ini before training:"
-        cat config.ini
-        
-        # Verify data files exist
-        echo "Checking if data files exist:"
-        ls -la data/
-        
+        mkdir -p experiments
         python src/train.py
-        
-        # Verify model file was created
-        echo "Contents of experiments directory:"
-        ls -la experiments/
         
     - name: Run functional tests
       run: |
@@ -133,10 +236,38 @@ jobs:
         echo "Running functional tests on the trained model..."
         python src/predict.py -t func
         
-        # Display test results
-        echo "Test results:"
-        ls -la results/
-        cat results/prediction_results_*.json | jq .
+    - name: Upload trained model
+      uses: actions/upload-artifact@v4
+      with:
+        name: trained-model
+        path: |
+          experiments/
+          results/
+          
+  build-and-push:
+    needs: [test, train-model]
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Download processed data
+      uses: actions/download-artifact@v4
+      with:
+        name: processed-data
+        
+    - name: Download trained model
+      uses: actions/download-artifact@v4
+      with:
+        name: trained-model
+        
+    - name: Download coverage report
+      uses: actions/download-artifact@v4
+      with:
+        name: coverage-report
+        path: htmlcov/
         
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v2
@@ -176,17 +307,43 @@ jobs:
         # Get last 5 commit hashes
         COMMITS=$(git log -5 --pretty=format:"%H %s")
         
-        # Update dev_sec_ops.yml with the new digest and commits
-        sed -i "s|digest: sha256:.*|digest: $DIGEST|" dev_sec_ops.yml
-        
         # Get test coverage
-        COVERAGE=$(python -m coverage report | grep TOTAL | awk '{print $NF}')
-        sed -i "s|total: .*%|total: $COVERAGE|" dev_sec_ops.yml
+        COVERAGE=$(grep -A 1 "TOTAL" htmlcov/index.html | tail -n 1 | grep -o '[0-9]\+%' | head -n 1)
+        
+        # Update dev_sec_ops.yml with the new digest and commits
+        cat > dev_sec_ops.yml << EOF
+        # Docker Image Security Information
+        docker_image:
+          repository: ${{ secrets.DOCKERHUB_USERNAME }}/penguin-classifier
+          tag: latest
+          digest: $DIGEST
+          build_date: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          
+        # Git Commit Information
+        git_commits:
+          last_5_commits:
+        $(git log -5 --pretty=format:"    - hash: %H%n      author: %an%n      date: %ad%n      message: %s%n" --date=iso)
+          
+        # Test Coverage Information
+        test_coverage:
+          total: $COVERAGE
+          date: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          
+        # Security Scan Information
+        security_scan:
+          status: not_performed
+          date: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          vulnerabilities:
+            critical: 0
+            high: 0
+            medium: 0
+            low: 0
+        EOF
         
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: model-and-reports
+        name: deployment-artifacts
         path: |
           experiments/
           htmlcov/
