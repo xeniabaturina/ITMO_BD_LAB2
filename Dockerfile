@@ -30,4 +30,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 EXPOSE 5000
 
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
-CMD ["python", "src/api.py"]
+CMD ["python", "-m", "src.api"]
