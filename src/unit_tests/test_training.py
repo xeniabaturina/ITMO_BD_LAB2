@@ -262,7 +262,7 @@ class TestTraining(unittest.TestCase):
             "max_depth": "None",
             "min_samples_split": "2",
             "min_samples_leaf": "1",
-            "path": "experiments/random_forest.sav"
+            "path": "experiments/random_forest.sav",
         }
 
         # Patch the ConfigParser.read method

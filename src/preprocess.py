@@ -10,7 +10,7 @@ TEST_SIZE = 0.3
 SHOW_LOG = True
 
 
-class DataMaker:
+class PenguinPreprocessor:
     """
     Class for preparing penguin dataset for training and testing.
     """
@@ -31,7 +31,7 @@ class DataMaker:
             os.path.join(self.project_path, "Test_Penguins_X.csv"),
             os.path.join(self.project_path, "Test_Penguins_y.csv"),
         ]
-        self.log.info("DataMaker is ready")
+        self.log.info("PenguinPreprocessor is ready")
 
     def get_data(self) -> bool:
         """
@@ -143,5 +143,5 @@ class DataMaker:
 
 
 if __name__ == "__main__":
-    data_maker = DataMaker()
+    data_maker = PenguinPreprocessor()
     data_maker.split_data()

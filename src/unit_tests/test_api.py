@@ -170,8 +170,8 @@ class TestAPI(unittest.TestCase):
 
         self.assertEqual(
             response.status_code,
-            500,
-            "Should return 500 for empty request in test environment",
+            400,
+            "Should return 400 for empty request (client error)",
         )
 
 

@@ -13,7 +13,7 @@ from logger import Logger
 SHOW_LOG = True
 
 
-class Predictor:
+class PenguinPredictor:
     """
     Class for making predictions with the trained model.
     """
@@ -176,5 +176,5 @@ class Predictor:
 
 
 if __name__ == "__main__":
-    predictor = Predictor()
+    predictor = PenguinPredictor()
     predictor.predict()

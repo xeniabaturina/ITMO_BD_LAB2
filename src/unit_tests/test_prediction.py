@@ -11,7 +11,7 @@ from unittest.mock import patch, MagicMock
 
 # Add the parent directory to the path to import modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from predict import Predictor
+from predict import PenguinPredictor
 
 
 class MockArgParser:
@@ -114,8 +114,8 @@ class TestPrediction(unittest.TestCase):
         mock_read.return_value = None
 
         # Create predictor with patched environment
-        with patch.object(Predictor, "__init__", return_value=None):
-            predictor = Predictor()
+        with patch.object(PenguinPredictor, "__init__", return_value=None):
+            predictor = PenguinPredictor()
             predictor.config = self.config
             predictor.X_test = self.X_test
             predictor.y_test = self.y_test
@@ -140,8 +140,8 @@ class TestPrediction(unittest.TestCase):
         mock_arg_parser.return_value = mock_parser
 
         # Create predictor with mocked environment
-        with patch.object(Predictor, "__init__", return_value=None):
-            predictor = Predictor()
+        with patch.object(PenguinPredictor, "__init__", return_value=None):
+            predictor = PenguinPredictor()
             predictor.config = self.config
             predictor.X_test = self.X_test
             predictor.y_test = self.y_test
@@ -191,7 +191,7 @@ class TestPrediction(unittest.TestCase):
             # Patch Logger
             with patch("predict.Logger", return_value=MagicMock()):
                 # Initialize the predictor
-                predictor = Predictor()
+                predictor = PenguinPredictor()
 
                 # Verify the predictor was initialized correctly
                 self.assertEqual(predictor.X_test.shape, self.X_test.shape)
@@ -209,8 +209,8 @@ class TestPrediction(unittest.TestCase):
         mock_arg_parser.return_value = mock_parser
 
         # Create predictor with mocked environment
-        with patch.object(Predictor, "__init__", return_value=None):
-            predictor = Predictor()
+        with patch.object(PenguinPredictor, "__init__", return_value=None):
+            predictor = PenguinPredictor()
             predictor.config = self.config
             predictor.X_test = self.X_test
             predictor.y_test = self.y_test
@@ -241,8 +241,8 @@ class TestPrediction(unittest.TestCase):
         mock_arg_parser.return_value = mock_parser
 
         # Create predictor with mocked environment
-        with patch.object(Predictor, "__init__", return_value=None):
-            predictor = Predictor()
+        with patch.object(PenguinPredictor, "__init__", return_value=None):
+            predictor = PenguinPredictor()
             predictor.config = self.config
             predictor.X_test = self.X_test
             predictor.y_test = self.y_test
