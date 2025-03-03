@@ -32,27 +32,25 @@ class PenguinClassifier:
                 # Try to load using the path from config
                 return pd.read_csv(config_path, index_col=0)
             except FileNotFoundError:
-                self.log.warning(f"File not found at {config_path}, trying relative path {relative_fallback}")
+                self.log.warning(
+                    f"File not found at {config_path}, trying relative path {relative_fallback}"
+                )
                 # If that fails, try the relative path
                 return pd.read_csv(relative_fallback, index_col=0)
 
         # Load training and testing data with fallbacks
         try:
             self.X_train = safe_load_csv(
-                self.config["SPLIT_DATA"]["X_train"], 
-                "data/Train_Penguins_X.csv"
+                self.config["SPLIT_DATA"]["X_train"], "data/Train_Penguins_X.csv"
             )
             self.y_train = safe_load_csv(
-                self.config["SPLIT_DATA"]["y_train"], 
-                "data/Train_Penguins_y.csv"
+                self.config["SPLIT_DATA"]["y_train"], "data/Train_Penguins_y.csv"
             )
             self.X_test = safe_load_csv(
-                self.config["SPLIT_DATA"]["X_test"], 
-                "data/Test_Penguins_X.csv"
+                self.config["SPLIT_DATA"]["X_test"], "data/Test_Penguins_X.csv"
             )
             self.y_test = safe_load_csv(
-                self.config["SPLIT_DATA"]["y_test"], 
-                "data/Test_Penguins_y.csv"
+                self.config["SPLIT_DATA"]["y_test"], "data/Test_Penguins_y.csv"
             )
         except Exception as e:
             self.log.error(f"Error loading data: {e}")
@@ -62,12 +60,14 @@ class PenguinClassifier:
         # Set up model path
         self.project_path = os.path.join(os.getcwd(), "experiments")
         os.makedirs(self.project_path, exist_ok=True)
-        
+
         # Use the path from config if it's a relative path, otherwise use a default
         model_path = self.config["RANDOM_FOREST"]["path"]
         if os.path.isabs(model_path):
             self.model_path = os.path.join(self.project_path, "random_forest.sav")
-            self.log.warning(f"Absolute path detected in config: {model_path}, using {self.model_path} instead")
+            self.log.warning(
+                f"Absolute path detected in config: {model_path}, using {self.model_path} instead"
+            )
         else:
             self.model_path = model_path
 

@@ -54,7 +54,7 @@ class DataMaker:
                 self.log.info("X and y data is ready")
                 self.config["DATA"] = {
                     "X_data": "data/Penguins_X.csv",
-                    "y_data": "data/Penguins_y.csv"
+                    "y_data": "data/Penguins_y.csv",
                 }
                 with open("config.ini", "w") as configfile:
                     self.config.write(configfile)
@@ -99,18 +99,18 @@ class DataMaker:
                 "X_test": "data/Test_Penguins_X.csv",
                 "y_test": "data/Test_Penguins_y.csv",
             }
-            
+
             self.config["RANDOM_FOREST"] = {
                 "n_estimators": "100",
                 "max_depth": "None",
                 "min_samples_split": "2",
                 "min_samples_leaf": "1",
-                "path": "experiments/random_forest.sav"
+                "path": "experiments/random_forest.sav",
             }
-            
+
             with open("config.ini", "w") as configfile:
                 self.config.write(configfile)
-            
+
             self.log.info("Data split successfully")
             return True
         except Exception as e:

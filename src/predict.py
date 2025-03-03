@@ -47,7 +47,9 @@ class Predictor:
                 self.log.info(f"Attempting to load data from {config_path}")
                 return pd.read_csv(config_path, index_col=0)
             except FileNotFoundError:
-                self.log.warning(f"File not found at {config_path}, trying relative path {relative_fallback}")
+                self.log.warning(
+                    f"File not found at {config_path}, trying relative path {relative_fallback}"
+                )
                 # If that fails, try the relative path
                 return pd.read_csv(relative_fallback, index_col=0)
 
@@ -56,15 +58,21 @@ class Predictor:
             if "SPLIT_DATA" in self.config:
                 x_test_path = self.config["SPLIT_DATA"]["X_test"]
                 y_test_path = self.config["SPLIT_DATA"]["y_test"]
-                self.log.info(f"Using test data paths from config: {x_test_path}, {y_test_path}")
+                self.log.info(
+                    f"Using test data paths from config: {x_test_path}, {y_test_path}"
+                )
             else:
                 x_test_path = "data/Test_Penguins_X.csv"
                 y_test_path = "data/Test_Penguins_y.csv"
-                self.log.info(f"Using default test data paths: {x_test_path}, {y_test_path}")
+                self.log.info(
+                    f"Using default test data paths: {x_test_path}, {y_test_path}"
+                )
 
             self.X_test = safe_load_csv(x_test_path, "data/Test_Penguins_X.csv")
             self.y_test = safe_load_csv(y_test_path, "data/Test_Penguins_y.csv")
-            self.log.info(f"Successfully loaded test data with shapes: X={self.X_test.shape}, y={self.y_test.shape}")
+            self.log.info(
+                f"Successfully loaded test data with shapes: X={self.X_test.shape}, y={self.y_test.shape}"
+            )
         except Exception as e:
             self.log.error(f"Error loading test data: {e}")
             self.log.error(traceback.format_exc())
