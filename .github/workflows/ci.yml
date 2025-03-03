@@ -25,6 +25,17 @@ jobs:
       id: cache-key
       run: echo "key=pip-${{ hashFiles('requirements.txt') }}-$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
       
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest coverage dvc
+        
+    - name: Create cache directories
+      run: |
+        mkdir -p ~/.cache/pip
+        mkdir -p .dvc/cache
+        
     - name: Cache Python dependencies
       uses: actions/cache@v3
       with:
@@ -34,17 +45,15 @@ jobs:
           pip-${{ hashFiles('requirements.txt') }}-
           pip-
           
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pytest coverage dvc
+    - name: Generate DVC cache key
+      id: dvc-cache-key
+      run: echo "key=dvc-${{ hashFiles('data.dvc') }}-$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
         
     - name: Cache DVC data
       uses: actions/cache@v3
       with:
         path: .dvc/cache
-        key: dvc-${{ hashFiles('data.dvc') }}-$(date +'%Y-%m-%d')
+        key: ${{ steps.dvc-cache-key.outputs.key }}
         restore-keys: |
           dvc-${{ hashFiles('data.dvc') }}-
           dvc-
@@ -78,6 +87,9 @@ jobs:
         
     - name: Setup DVC
       run: |
+        # Create DVC cache directory
+        mkdir -p .dvc/cache
+        
         # Skip DVC init if .dvc directory already exists
         if [ ! -d ".dvc" ]; then
           dvc init --no-scm
@@ -138,7 +150,7 @@ jobs:
     - name: Prepare data
       run: |
         mkdir -p experiments
-        python src/preprocess.py
+        python -m src.preprocess
         
     - name: Upload processed data
       uses: actions/upload-artifact@v4
@@ -180,11 +192,11 @@ jobs:
         
     - name: Run unit tests
       run: |
-        python -m pytest src/unit_tests/
+        python -m pytest
         
     - name: Calculate test coverage
       run: |
-        python -m coverage run -m pytest src/unit_tests/
+        python -m coverage run -m pytest
         python -m coverage report
         python -m coverage html
         
@@ -226,15 +238,15 @@ jobs:
     - name: Train model
       run: |
         mkdir -p experiments
-        python src/train.py
+        python -m src.train
         
     - name: Run functional tests
       run: |
         echo "Running smoke tests on the trained model..."
-        python src/predict.py -t smoke
+        python -m src.predict -t smoke
         
         echo "Running functional tests on the trained model..."
-        python src/predict.py -t func
+        python -m src.predict -t func
         
     - name: Upload trained model
       uses: actions/upload-artifact@v4

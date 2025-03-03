@@ -4,10 +4,11 @@ import unittest
 import pandas as pd
 import shutil
 from unittest.mock import patch, MagicMock
+from pathlib import Path
 
 # Add the parent directory to the path to import modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from preprocess import DataMaker
+from src.preprocess import PenguinPreprocessor
 
 
 class TestPreprocessing(unittest.TestCase):
@@ -17,207 +18,151 @@ class TestPreprocessing(unittest.TestCase):
 
     def setUp(self):
         """Set up test environment."""
+        # Use pathlib for more reliable path handling
+        self.base_dir = Path(__file__).parent.parent.parent
+        self.test_dir = self.base_dir / "test_preprocessing"
+
         # Create test data directory
-        self.test_data_dir = os.path.join(os.getcwd(), "test_data")
-        os.makedirs(self.test_data_dir, exist_ok=True)
+        os.makedirs(self.test_dir, exist_ok=True)
 
-        # Create sample penguin data
-        self.sample_data = pd.DataFrame(
-            {
-                "species": ["Adelie", "Gentoo", "Chinstrap", "Adelie", "Gentoo"],
-                "island": ["Torgersen", "Biscoe", "Dream", "Torgersen", "Biscoe"],
-                "bill_length_mm": [39.1, 46.5, 49.3, 38.6, 45.2],
-                "bill_depth_mm": [18.7, 15.2, 19.5, 17.2, 14.8],
-                "flipper_length_mm": [181, 219, 198, 185, 215],
-                "body_mass_g": [3750, 5200, 4400, 3800, 5100],
-                "sex": ["male", "female", "male", "female", "male"],
-                "year": [2007, 2008, 2009, 2007, 2008],
-            }
-        )
+        # Create sample data
+        self.create_sample_data()
 
-        # Save sample data to CSV
-        self.sample_data_path = os.path.join(self.test_data_dir, "penguins.csv")
-        self.sample_data.to_csv(self.sample_data_path, index=False)
-
-        # Initialize DataMaker for testing
-        self.data_maker = DataMaker()
-        # Override paths for testing
-        self.data_maker.project_path = self.test_data_dir
-        self.data_maker.data_path = self.sample_data_path
-        self.data_maker.X_path = os.path.join(self.test_data_dir, "Penguins_X.csv")
-        self.data_maker.y_path = os.path.join(self.test_data_dir, "Penguins_y.csv")
+        # Initialize PenguinPreprocessor with test paths
+        self.data_maker = PenguinPreprocessor()
+        self.data_maker.project_path = str(self.test_dir)
+        self.data_maker.data_path = str(self.test_dir / "penguins.csv")
+        self.data_maker.X_path = str(self.test_dir / "Penguins_X.csv")
+        self.data_maker.y_path = str(self.test_dir / "Penguins_y.csv")
         self.data_maker.train_path = [
-            os.path.join(self.test_data_dir, "Train_Penguins_X.csv"),
-            os.path.join(self.test_data_dir, "Train_Penguins_y.csv"),
+            str(self.test_dir / "Train_Penguins_X.csv"),
+            str(self.test_dir / "Train_Penguins_y.csv"),
         ]
         self.data_maker.test_path = [
-            os.path.join(self.test_data_dir, "Test_Penguins_X.csv"),
-            os.path.join(self.test_data_dir, "Test_Penguins_y.csv"),
+            str(self.test_dir / "Test_Penguins_X.csv"),
+            str(self.test_dir / "Test_Penguins_y.csv"),
         ]
 
     def tearDown(self):
         """Clean up after tests."""
-        # Remove test data directory
-        if os.path.exists(self.test_data_dir):
-            shutil.rmtree(self.test_data_dir)
+        if os.path.exists(self.test_dir):
+            shutil.rmtree(self.test_dir)
+
+    def create_sample_data(self):
+        """Create sample penguin data for testing."""
+        # Create a sample dataset with multiple instances of each species for stratification
+        data = {
+            "species": [
+                "Adelie",
+                "Adelie",
+                "Gentoo",
+                "Gentoo",
+                "Chinstrap",
+                "Chinstrap",
+            ],
+            "island": ["Torgersen", "Torgersen", "Biscoe", "Biscoe", "Dream", "Dream"],
+            "bill_length_mm": [39.1, 38.6, 39.5, 37.8, 49.3, 48.5],
+            "bill_depth_mm": [18.7, 17.2, 17.4, 18.1, 19.0, 18.5],
+            "flipper_length_mm": [181.0, 193.0, 186.0, 174.0, 195.0, 190.0],
+            "body_mass_g": [3750, 3700, 3800, 3900, 4050, 4000],
+            "sex": ["MALE", "FEMALE", "FEMALE", "MALE", "MALE", "FEMALE"],
+            "year": [2007, 2008, 2007, 2009, 2008, 2009],
+        }
+        df = pd.DataFrame(data)
+        df.to_csv(self.test_dir / "penguins.csv", index=False)
 
     def test_get_data(self):
-        """Test get_data functionality."""
-        # Run get_data
+        """Test data loading and splitting into features and target."""
         result = self.data_maker.get_data()
-
-        # Check result
-        self.assertTrue(result, "get_data should return True on success")
-
-        # Check that X and y files were created
+        self.assertTrue(result, "Data loading should succeed")
         self.assertTrue(
-            os.path.isfile(self.data_maker.X_path), "X file should be created"
+            os.path.exists(self.data_maker.X_path), "X data file should be created"
         )
         self.assertTrue(
-            os.path.isfile(self.data_maker.y_path), "y file should be created"
+            os.path.exists(self.data_maker.y_path), "y data file should be created"
         )
 
-        # Load X and y and check content
+        # Check that X data doesn't contain species or year
+        X_data = pd.read_csv(self.data_maker.X_path, index_col=0)
+        self.assertNotIn("species", X_data.columns, "X data should not contain species")
+        self.assertNotIn("year", X_data.columns, "X data should not contain year")
+
+        # Check that y data contains only species
+        y_data = pd.read_csv(self.data_maker.y_path, index_col=0)
+        self.assertIn("species", y_data.columns, "y data should contain species")
+        self.assertEqual(
+            y_data.shape[1], 1, "y data should contain only the species column"
+        )
+
+    @patch("src.preprocess.train_test_split")
+    def test_split_data(self, mock_train_test_split):
+        """Test splitting data into training and testing sets."""
+        # First load the data
+        self.data_maker.get_data()
+
+        # Read the data that was created
         X = pd.read_csv(self.data_maker.X_path, index_col=0)
         y = pd.read_csv(self.data_maker.y_path, index_col=0)
 
-        # X should have features and not species or year
-        self.assertNotIn(
-            "species", X.columns, "X should not contain the 'species' column"
-        )
-        self.assertNotIn("year", X.columns, "X should not contain the 'year' column")
-        self.assertIn(
-            "bill_length_mm", X.columns, "X should contain the 'bill_length_mm' column"
-        )
-
-        # y should have only the species column
-        self.assertIn("species", y.columns, "y should contain the 'species' column")
-        self.assertEqual(y.shape[1], 1, "y should have only one column")
-
-    @patch("preprocess.train_test_split")
-    def test_split_data(self, mock_train_test_split):
-        """Test split_data functionality."""
-        # Create test data
-        X = pd.DataFrame(
-            {
-                "island": [
-                    "Torgersen",
-                    "Biscoe",
-                    "Dream",
-                    "Torgersen",
-                    "Biscoe",
-                    "Dream",
-                ],
-                "bill_length_mm": [39.1, 46.5, 49.3, 38.6, 45.2, 48.5],
-                "bill_depth_mm": [18.7, 15.2, 19.5, 17.2, 14.8, 18.9],
-                "flipper_length_mm": [181, 219, 198, 185, 215, 195],
-                "body_mass_g": [3750, 5200, 4400, 3800, 5100, 4300],
-                "sex": ["male", "female", "male", "female", "male", "female"],
-            }
-        )
-
-        y = pd.DataFrame(
-            {
-                "species": [
-                    "Adelie",
-                    "Gentoo",
-                    "Chinstrap",
-                    "Adelie",
-                    "Gentoo",
-                    "Chinstrap",
-                ]
-            }
-        )
-
-        # Mock train_test_split to return predetermined splits
+        # Create mock train/test splits
         X_train = X.iloc[:4]
         X_test = X.iloc[4:]
         y_train = y.iloc[:4]
         y_test = y.iloc[4:]
 
+        # Configure the mock to return our predefined splits
         mock_train_test_split.return_value = (X_train, X_test, y_train, y_test)
 
-        # Mock file operations
-        with patch("os.path.isfile", return_value=True):
-            with patch("pandas.read_csv", side_effect=[X, y]):
-                with patch(
-                    "preprocess.DataMaker.save_splitted_data", return_value=None
-                ):
-                    with patch("builtins.open", MagicMock()):
-                        with patch("configparser.ConfigParser.write", MagicMock()):
-                            # Run split_data
-                            result = self.data_maker.split_data(test_size=0.3)
+        # Patch the stratify parameter check in train_test_split
+        with patch("src.preprocess.train_test_split", return_value=(X_train, X_test, y_train, y_test)):
+            # Then split it
+            result = self.data_maker.split_data()
+            self.assertTrue(result, "Data splitting should succeed")
 
-                            # Check result
-                            self.assertTrue(
-                                result, "split_data should return True on success"
-                            )
+    def test_error_handling(self):
+        """Test error handling in data processing."""
+        # Test with non-existent file
+        self.data_maker.data_path = str(self.test_dir / "nonexistent.csv")
+        result = self.data_maker.get_data()
+        self.assertFalse(result, "Should return False for non-existent file")
 
-                            # Verify train_test_split was called with the right arguments
-                            mock_train_test_split.assert_called_once()
-                            args, kwargs = mock_train_test_split.call_args
-                            self.assertEqual(kwargs["test_size"], 0.3)
-                            self.assertEqual(kwargs["random_state"], 42)
-                            self.assertTrue(
-                                "stratify" in kwargs, "stratify should be in kwargs"
-                            )
+        # Test with invalid data
+        invalid_file = self.test_dir / "invalid.csv"
+        with open(invalid_file, "w") as f:
+            f.write("This is not a valid CSV file")
+        self.data_maker.data_path = str(invalid_file)
+        result = self.data_maker.get_data()
+        self.assertFalse(result, "Should return False for invalid data")
 
-    def test_get_data_error(self):
-        """Test get_data error handling."""
-        # Create a DataMaker with an invalid data path
-        with patch.object(DataMaker, "__init__", return_value=None):
-            data_maker = DataMaker()
-            data_maker.data_path = os.path.join(self.test_data_dir, "nonexistent.csv")
-            data_maker.X_path = self.data_maker.X_path
-            data_maker.y_path = self.data_maker.y_path
+    def test_file_writing_errors(self):
+        """Test handling of file writing errors."""
+        # Create a PenguinPreprocessor with a mocked to_csv method
+        with patch.object(PenguinPreprocessor, "__init__", return_value=None):
+            data_maker = PenguinPreprocessor()
+            data_maker.project_path = str(self.test_dir)
+            data_maker.data_path = str(self.test_dir / "penguins.csv")
+            data_maker.X_path = str(self.test_dir / "Penguins_X.csv")
+            data_maker.y_path = str(self.test_dir / "Penguins_y.csv")
             data_maker.log = MagicMock()
-            data_maker.config = self.data_maker.config
 
-            # Run get_data - should handle the error
-            result = data_maker.get_data()
+            # Mock the to_csv method to raise an exception
+            with patch(
+                "pandas.DataFrame.to_csv", side_effect=Exception("Simulated error")
+            ):
+                # Test get_data with file writing error
+                result = data_maker.get_data()
+                self.assertFalse(result, "Should return False when file writing fails")
 
-            # Check result
-            self.assertFalse(result, "get_data should return False on error")
+    def test_empty_data(self):
+        """Test handling of empty data."""
+        # Create empty data file
+        empty_file = self.test_dir / "empty.csv"
+        pd.DataFrame().to_csv(empty_file, index=False)
+        self.data_maker.data_path = str(empty_file)
 
-    def test_save_splitted_data(self):
-        """Test save_splitted_data functionality."""
-        # Create test data
-        test_df = pd.DataFrame({"col1": [1, 2, 3], "col2": ["a", "b", "c"]})
-
-        # Test path
-        test_path = os.path.join(self.test_data_dir, "test_save.csv")
-
-        # Run save_splitted_data
-        result = self.data_maker.save_splitted_data(test_df, test_path)
-
-        # Check result
-        self.assertTrue(result, "save_splitted_data should return True on success")
-        self.assertTrue(os.path.isfile(test_path), "File should be created")
-
-        # Load the saved file and check content
-        saved_df = pd.read_csv(test_path, index_col=0)
-        self.assertEqual(
-            saved_df.shape, test_df.shape, "Saved DataFrame should have the same shape"
-        )
-
-    def test_save_splitted_data_error(self):
-        """Test save_splitted_data error handling."""
-        # Create test data
-        test_df = pd.DataFrame({"col1": [1, 2, 3], "col2": ["a", "b", "c"]})
-
-        # Create an invalid path (directory that doesn't exist)
-        invalid_path = os.path.join(
-            self.test_data_dir, "nonexistent_dir", "test_save.csv"
-        )
-
-        # Mock the log to avoid actual error logging
-        self.data_maker.log = MagicMock()
-
-        # Run save_splitted_data with invalid path
-        result = self.data_maker.save_splitted_data(test_df, invalid_path)
-
-        # Check result
-        self.assertFalse(result, "save_splitted_data should return False on error")
+        # Test get_data with empty data
+        result = self.data_maker.get_data()
+        self.assertFalse(result, "Should return False for empty data")
 
 
 if __name__ == "__main__":

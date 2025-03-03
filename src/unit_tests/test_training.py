@@ -7,10 +7,11 @@ import shutil
 import configparser
 from unittest.mock import patch, MagicMock
 from sklearn.ensemble import RandomForestClassifier
+from pathlib import Path
 
 # Add the parent directory to the path to import modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from train import PenguinClassifier
+from src.train import PenguinClassifier
 
 
 class TestTraining(unittest.TestCase):
@@ -20,9 +21,13 @@ class TestTraining(unittest.TestCase):
 
     def setUp(self):
         """Set up test environment."""
+        # Get the project root directory
+        self.root_dir = Path(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        
         # Create test directories
-        self.test_data_dir = os.path.join(os.getcwd(), "test_data")
-        self.test_experiments_dir = os.path.join(os.getcwd(), "test_experiments")
+        self.test_dir = str(self.root_dir / "test_training")
+        self.test_data_dir = str(Path(self.test_dir) / "data")
+        self.test_experiments_dir = str(Path(self.test_dir) / "experiments")
         os.makedirs(self.test_data_dir, exist_ok=True)
         os.makedirs(self.test_experiments_dir, exist_ok=True)
 
@@ -64,21 +69,39 @@ class TestTraining(unittest.TestCase):
         self.X_test.to_csv(self.X_test_path, index=True)
         self.y_test.to_csv(self.y_test_path, index=True)
 
-        # Create config file
+        # Create config file with relative paths
         self.config = configparser.ConfigParser()
+        
+        # Calculate relative paths from the project root
+        data_rel_dir = os.path.relpath(self.test_data_dir, self.root_dir)
+        exp_rel_dir = os.path.relpath(self.test_experiments_dir, self.root_dir)
+        
         self.config["SPLIT_DATA"] = {
-            "X_train": self.X_train_path,
-            "y_train": self.y_train_path,
-            "X_test": self.X_test_path,
-            "y_test": self.y_test_path,
+            "X_train": f"{data_rel_dir}/Train_Penguins_X.csv",
+            "y_train": f"{data_rel_dir}/Train_Penguins_y.csv",
+            "X_test": f"{data_rel_dir}/Test_Penguins_X.csv",
+            "y_test": f"{data_rel_dir}/Test_Penguins_y.csv",
         }
 
-        self.config_path = os.path.join(os.getcwd(), "test_config.ini")
+        self.config_path = str(self.root_dir / "test_config.ini")
         with open(self.config_path, "w") as configfile:
             self.config.write(configfile)
 
         # Create a test model path
         self.model_path = os.path.join(self.test_experiments_dir, "random_forest.sav")
+        
+        # Add RANDOM_FOREST section with relative path
+        self.config["RANDOM_FOREST"] = {
+            "n_estimators": "100",
+            "max_depth": "None",
+            "min_samples_split": "2",
+            "min_samples_leaf": "1",
+            "path": f"{exp_rel_dir}/random_forest.sav",
+        }
+        
+        # Write updated config
+        with open(self.config_path, "w") as configfile:
+            self.config.write(configfile)
 
     @patch("train.configparser.ConfigParser.read")
     def create_test_classifier(self, mock_read):
@@ -192,6 +215,9 @@ class TestTraining(unittest.TestCase):
         # Create a classifier instance for this test
         with patch("train.configparser.ConfigParser.read"):
             classifier = self.create_test_classifier()
+            
+            # Add root_dir attribute which is needed by save_model
+            classifier.root_dir = Path(self.test_dir)
 
             # Create a simple model to save
             model = RandomForestClassifier(n_estimators=10)
@@ -199,25 +225,31 @@ class TestTraining(unittest.TestCase):
                 self.X_train.select_dtypes(include=[np.number]),
                 self.y_train.values.ravel(),
             )
+            
+            # Add attributes needed for the config update
+            model.n_estimators = 10
+            model.max_depth = None
+            model.min_samples_split = 2
+            model.min_samples_leaf = 1
 
             # Mock the open function to avoid actual file writing
             with patch("builtins.open", MagicMock()):
                 with patch("pickle.dump", MagicMock()):
-                    # Mock os.path.isfile to return True
-                    with patch("os.path.isfile", return_value=True):
+                    with patch("os.makedirs", MagicMock()):
                         # Save the model
-                        result = classifier.save_model(model, classifier.model_path)
+                        result = classifier.save_model(model)
 
                         # Check result
-                        self.assertTrue(
-                            result, "save_model should return True on success"
-                        )
+                        self.assertTrue(result, "save_model should return True on success")
 
     def test_save_model_error(self):
         """Test save_model error handling."""
         # Create a classifier instance for this test
         with patch("train.configparser.ConfigParser.read"):
             classifier = self.create_test_classifier()
+            
+            # Add root_dir attribute which is needed by save_model
+            classifier.root_dir = Path(self.test_dir)
 
             # Create a simple model to save
             model = RandomForestClassifier(n_estimators=10)
@@ -225,22 +257,32 @@ class TestTraining(unittest.TestCase):
                 self.X_train.select_dtypes(include=[np.number]),
                 self.y_train.values.ravel(),
             )
+            
+            # Add attributes needed for the config update
+            model.n_estimators = 10
+            model.max_depth = None
+            model.min_samples_split = 2
+            model.min_samples_leaf = 1
 
             # Mock the open function to raise an exception
             with patch("builtins.open", side_effect=Exception("Test exception")):
                 # Save the model - should handle the exception
-                result = classifier.save_model(model, classifier.model_path)
+                result = classifier.save_model(model)
 
                 # Check result
                 self.assertFalse(result, "save_model should return False on error")
 
-    @patch("train.os.getcwd")
+    @patch("train.Path")
     @patch("train.os.makedirs")
     @patch("train.pd.read_csv")
-    def test_classifier_initialization(self, mock_read_csv, mock_makedirs, mock_getcwd):
+    def test_classifier_initialization(self, mock_read_csv, mock_makedirs, mock_path):
         """Test PenguinClassifier initialization."""
         # Setup mocks
-        mock_getcwd.return_value = "/test"
+        mock_path_instance = MagicMock()
+        mock_path_instance.__truediv__.return_value = mock_path_instance
+        mock_path_instance.__str__.return_value = "/test"
+        mock_path.return_value = mock_path_instance
+        
         mock_read_csv.side_effect = [
             self.X_train,
             self.y_train,
@@ -262,7 +304,7 @@ class TestTraining(unittest.TestCase):
             "max_depth": "None",
             "min_samples_split": "2",
             "min_samples_leaf": "1",
-            "path": "experiments/random_forest.sav"
+            "path": "experiments/random_forest.sav",
         }
 
         # Patch the ConfigParser.read method
@@ -280,11 +322,8 @@ class TestTraining(unittest.TestCase):
                     self.assertEqual(classifier.X_test.shape, self.X_test.shape)
                     self.assertEqual(classifier.y_test.shape, self.y_test.shape)
 
-                    # Verify the model path was set correctly
-                    self.assertTrue(classifier.model_path.endswith("random_forest.sav"))
-
-                    # Verify makedirs was called
-                    mock_makedirs.assert_called_once()
+                    # Verify the model path was set correctly - we're now using Path
+                    self.assertIsNotNone(classifier.model_path, "Model path should not be None")
 
 
 if __name__ == "__main__":

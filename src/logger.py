@@ -2,13 +2,17 @@ import logging
 import os
 import sys
 from logging.handlers import RotatingFileHandler
+from pathlib import Path
 
 
 class Logger:
     def __init__(self, show_log: bool = True) -> None:
         self.logger = None
         self.show_log = show_log
-        self.logs_path = os.path.join(os.getcwd(), "logs")
+        
+        # Get the project root directory (assuming src is one level below root)
+        self.root_dir = Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        self.logs_path = str(self.root_dir / "logs")
 
         os.makedirs(self.logs_path, exist_ok=True)
 

@@ -7,13 +7,14 @@ import pandas as pd
 import pickle
 import numpy as np
 import traceback
+from pathlib import Path
 
-from logger import Logger
+from src.logger import Logger
 
 SHOW_LOG = True
 
 
-class Predictor:
+class PenguinPredictor:
     """
     Class for making predictions with the trained model.
     """
@@ -22,7 +23,11 @@ class Predictor:
         logger = Logger(SHOW_LOG)
         self.config = configparser.ConfigParser()
         self.log = logger.get_logger(__name__)
-        self.config.read("config.ini")
+        
+        # Get the project root directory (assuming src is one level below root)
+        self.root_dir = Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        config_path = self.root_dir / "config.ini"
+        self.config.read(str(config_path))
 
         self.parser = argparse.ArgumentParser(description="Penguin Species Predictor")
         self.parser.add_argument(
@@ -37,21 +42,24 @@ class Predictor:
             choices=["smoke", "func"],
         )
 
-        self.project_path = os.path.join(os.getcwd(), "experiments")
-        self.model_path = os.path.join(self.project_path, "random_forest.sav")
+        self.project_path = str(self.root_dir / "experiments")
+        self.model_path = str(Path(self.project_path) / "random_forest.sav")
 
-        # Function to safely load a file, trying both the path from config and a relative path
+        # Function to safely load a file, trying both the path from config and a relative fallback
         def safe_load_csv(config_path, relative_fallback):
             try:
                 # Try to load using the path from config
-                self.log.info(f"Attempting to load data from {config_path}")
-                return pd.read_csv(config_path, index_col=0)
+                # Convert config_path to a Path object relative to root_dir
+                full_path = self.root_dir / config_path
+                self.log.info(f"Attempting to load data from {full_path}")
+                return pd.read_csv(str(full_path), index_col=0)
             except FileNotFoundError:
+                # If that fails, try the relative fallback path
+                fallback_path = self.root_dir / relative_fallback
                 self.log.warning(
-                    f"File not found at {config_path}, trying relative path {relative_fallback}"
+                    f"File not found at {full_path}, falling back to {fallback_path}"
                 )
-                # If that fails, try the relative path
-                return pd.read_csv(relative_fallback, index_col=0)
+                return pd.read_csv(str(fallback_path), index_col=0)
 
         # Load test data with fallbacks
         try:
@@ -100,7 +108,7 @@ class Predictor:
 
             self.log.info(f"Model loaded from {self.model_path}")
 
-            results_dir = os.path.join(os.getcwd(), "results")
+            results_dir = str(self.root_dir / "results")
             os.makedirs(results_dir, exist_ok=True)
 
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -176,5 +184,5 @@ class Predictor:
 
 
 if __name__ == "__main__":
-    predictor = Predictor()
+    predictor = PenguinPredictor()
     predictor.predict()
