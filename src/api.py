@@ -8,7 +8,7 @@ import datetime
 from flask import Flask, request, jsonify
 from pathlib import Path
 
-from src.logger import Logger
+from .logger import Logger
 
 SHOW_LOG = True
 app = Flask(__name__)
