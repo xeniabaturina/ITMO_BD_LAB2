@@ -14,4 +14,4 @@ services:
       - "5000:5000"
     environment:
       - PYTHONPATH=/app
-    command: python src/api.py
+    command: python -m src.api
