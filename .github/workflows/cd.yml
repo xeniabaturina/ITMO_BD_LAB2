@@ -168,18 +168,15 @@ jobs:
         
     - name: Pull Docker image
       id: docker_pull
-      continue-on-error: true
       run: |
-        docker pull ${{ secrets.DOCKERHUB_USERNAME }}/penguin-classifier:${{ needs.prepare-deployment.outputs.image_tag }}
+        echo "Attempting to pull Docker image: ${{ secrets.DOCKERHUB_USERNAME }}/penguin-classifier:${{ needs.prepare-deployment.outputs.image_tag }}"
+        if ! docker pull ${{ secrets.DOCKERHUB_USERNAME }}/penguin-classifier:${{ needs.prepare-deployment.outputs.image_tag }}; then
+          echo "::error::Failed to pull Docker image. This could be due to authentication issues or the image not being available."
+          echo "::error::Please check your DockerHub credentials in GitHub Secrets (DOCKERHUB_USERNAME and DOCKERHUB_TOKEN)."
+          echo "::error::If you haven't created a DockerHub repository yet, please create one at https://hub.docker.com/repositories"
+          exit 1
+        fi
         echo "Pulled Docker image: ${{ secrets.DOCKERHUB_USERNAME }}/penguin-classifier:${{ needs.prepare-deployment.outputs.image_tag }}"
-        
-    - name: Check Docker pull status
-      if: steps.docker_pull.outcome != 'success'
-      run: |
-        echo "::error::Failed to pull Docker image. This could be due to authentication issues or the image not being available."
-        echo "::error::Please check your DockerHub credentials in GitHub Secrets (DOCKERHUB_USERNAME and DOCKERHUB_TOKEN)."
-        echo "::error::If you haven't created a DockerHub repository yet, please create one at https://hub.docker.com/repositories"
-        exit 1
         
     - name: Deploy container
       id: deploy_container
