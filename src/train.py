@@ -9,8 +9,9 @@ from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
 import traceback
+from pathlib import Path
 
-from logger import Logger
+from src.logger import Logger
 
 SHOW_LOG = True
 
@@ -24,19 +25,27 @@ class PenguinClassifier:
         logger = Logger(SHOW_LOG)
         self.config = configparser.ConfigParser()
         self.log = logger.get_logger(__name__)
-        self.config.read("config.ini")
+        
+        # Get the project root directory (assuming src is one level below root)
+        self.root_dir = Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        config_path = self.root_dir / "config.ini"
+        self.config.read(str(config_path))
 
         # Function to safely load a file, trying both the path from config and a relative path
         def safe_load_csv(config_path, relative_fallback):
             try:
                 # Try to load using the path from config
-                return pd.read_csv(config_path, index_col=0)
+                # Convert config_path to a Path object relative to root_dir
+                full_path = self.root_dir / config_path
+                self.log.info(f"Attempting to load data from {full_path}")
+                return pd.read_csv(str(full_path), index_col=0)
             except FileNotFoundError:
+                # If that fails, try the relative fallback path
+                fallback_path = self.root_dir / relative_fallback
                 self.log.warning(
-                    f"File not found at {config_path}, trying relative path {relative_fallback}"
+                    f"File not found at {full_path}, falling back to {fallback_path}"
                 )
-                # If that fails, try the relative path
-                return pd.read_csv(relative_fallback, index_col=0)
+                return pd.read_csv(str(fallback_path), index_col=0)
 
         # Load training and testing data with fallbacks
         try:
@@ -58,18 +67,18 @@ class PenguinClassifier:
             raise
 
         # Set up model path
-        self.project_path = os.path.join(os.getcwd(), "experiments")
+        self.project_path = str(self.root_dir / "experiments")
         os.makedirs(self.project_path, exist_ok=True)
 
         # Use the path from config if it's a relative path, otherwise use a default
         model_path = self.config["RANDOM_FOREST"]["path"]
         if os.path.isabs(model_path):
-            self.model_path = os.path.join(self.project_path, "random_forest.sav")
+            self.model_path = str(Path(self.project_path) / "random_forest.sav")
             self.log.warning(
                 f"Absolute path detected in config: {model_path}, using {self.model_path} instead"
             )
         else:
-            self.model_path = model_path
+            self.model_path = str(self.root_dir / model_path)
 
         self.log.info("PenguinClassifier is ready")
 
@@ -108,24 +117,11 @@ class PenguinClassifier:
                     f"min_samples_leaf={min_samples_leaf}"
                 )
 
-                self.config["RANDOM_FOREST"] = {
-                    "n_estimators": str(n_estimators),
-                    "max_depth": str(max_depth),
-                    "min_samples_split": str(min_samples_split),
-                    "min_samples_leaf": str(min_samples_leaf),
-                    "path": self.model_path,
-                }
-                with open("config.ini", "w") as configfile:
-                    self.config.write(configfile)
+            # Define preprocessing steps
+            numeric_features = ["bill_length_mm", "bill_depth_mm", "flipper_length_mm", "body_mass_g"]
+            categorical_features = ["island", "sex"]
 
-            categorical_cols = ["island", "sex"]
-            numeric_cols = [
-                "bill_length_mm",
-                "bill_depth_mm",
-                "flipper_length_mm",
-                "body_mass_g",
-            ]
-
+            # Create preprocessing pipeline
             numeric_transformer = Pipeline(
                 steps=[
                     ("imputer", SimpleImputer(strategy="median")),
@@ -136,74 +132,84 @@ class PenguinClassifier:
             categorical_transformer = Pipeline(
                 steps=[
                     ("imputer", SimpleImputer(strategy="most_frequent")),
-                    ("onehot", OneHotEncoder(drop="first", handle_unknown="ignore")),
+                    ("onehot", OneHotEncoder(handle_unknown="ignore")),
                 ]
             )
 
             preprocessor = ColumnTransformer(
                 transformers=[
-                    ("num", numeric_transformer, numeric_cols),
-                    ("cat", categorical_transformer, categorical_cols),
-                ],
-                remainder="drop",
-            )
-
-            classifier = Pipeline(
-                steps=[
-                    ("preprocessor", preprocessor),
-                    (
-                        "classifier",
-                        RandomForestClassifier(
-                            n_estimators=n_estimators,
-                            max_depth=max_depth,
-                            min_samples_split=min_samples_split,
-                            min_samples_leaf=min_samples_leaf,
-                            random_state=42,
-                        ),
-                    ),
+                    ("num", numeric_transformer, numeric_features),
+                    ("cat", categorical_transformer, categorical_features),
                 ]
             )
 
+            # Create and train the model
+            classifier = RandomForestClassifier(
+                n_estimators=n_estimators,
+                max_depth=max_depth,
+                min_samples_split=min_samples_split,
+                min_samples_leaf=min_samples_leaf,
+                random_state=42,
+            )
+
+            # Create and train the full pipeline
+            model = Pipeline(
+                steps=[("preprocessor", preprocessor), ("classifier", classifier)]
+            )
+
+            self.log.info("Training Random Forest classifier...")
             y_train_flat = self.y_train.values.ravel()
-            classifier.fit(self.X_train, y_train_flat)
-            self.save_model(classifier, self.model_path)
+            model.fit(self.X_train, y_train_flat)
+            self.save_model(model)
 
             if predict:
-                y_pred = classifier.predict(self.X_test)
+                self.log.info("Making predictions on test data...")
+                y_pred = model.predict(self.X_test)
                 accuracy = accuracy_score(self.y_test, y_pred)
+                self.log.info(f"Test accuracy: {accuracy:.4f}")
+
                 report = classification_report(self.y_test, y_pred)
-                self.log.info(f"Model accuracy: {accuracy:.4f}")
                 self.log.info(f"Classification report:\n{report}")
 
             return True
-
         except Exception as e:
             self.log.error(f"Error in train_random_forest: {e}")
             self.log.error(traceback.format_exc())
             return False
 
-    def save_model(self, classifier, path: str) -> bool:
+    def save_model(self, model) -> bool:
         """
-        Save a model to disk.
+        Save the trained model to disk.
 
         Args:
-            classifier: Trained model to save.
-            path (str): Path to save the model to.
+            model: The trained model to save.
 
         Returns:
             bool: True if operation is successful, False otherwise.
         """
         try:
-            os.makedirs(os.path.dirname(path), exist_ok=True)
+            os.makedirs(os.path.dirname(self.model_path), exist_ok=True)
+            with open(self.model_path, "wb") as f:
+                pickle.dump(model, f)
 
-            with open(path, "wb") as f:
-                pickle.dump(classifier, f)
+            self.log.info(f"Model saved to {self.model_path}")
 
-            self.log.info(f"Model saved to {path}")
-            return os.path.isfile(path)
+            # Update config with model path
+            self.config["RANDOM_FOREST"] = {
+                "n_estimators": str(model.n_estimators),
+                "max_depth": str(model.max_depth),
+                "min_samples_split": str(model.min_samples_split),
+                "min_samples_leaf": str(model.min_samples_leaf),
+                "path": os.path.relpath(self.model_path, self.root_dir),
+            }
 
+            # Write updated config
+            with open(os.path.join(self.root_dir, "config.ini"), "w") as configfile:
+                self.config.write(configfile)
+
+            return True
         except Exception as e:
-            self.log.error(f"Error in save_model: {e}")
+            self.log.error(f"Error saving model: {e}")
             self.log.error(traceback.format_exc())
             return False
 

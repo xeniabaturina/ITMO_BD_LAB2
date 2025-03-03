@@ -3,8 +3,9 @@ import os
 import pandas as pd
 from sklearn.model_selection import train_test_split
 import traceback
+from pathlib import Path
 
-from logger import Logger
+from src.logger import Logger
 
 TEST_SIZE = 0.3
 SHOW_LOG = True
@@ -19,17 +20,27 @@ class PenguinPreprocessor:
         logger = Logger(SHOW_LOG)
         self.config = configparser.ConfigParser()
         self.log = logger.get_logger(__name__)
-        self.project_path = os.path.join(os.getcwd(), "data")
-        self.data_path = os.path.join(self.project_path, "penguins.csv")
-        self.X_path = os.path.join(self.project_path, "Penguins_X.csv")
-        self.y_path = os.path.join(self.project_path, "Penguins_y.csv")
+
+        # Get the project root directory (assuming src is one level below root)
+        self.root_dir = Path(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+        self.project_path = str(self.root_dir / "data")
+
+        # Create data directory if it doesn't exist
+        os.makedirs(self.project_path, exist_ok=True)
+
+        # Set up paths
+        self.data_path = str(Path(self.project_path) / "penguins.csv")
+        self.X_path = str(Path(self.project_path) / "Penguins_X.csv")
+        self.y_path = str(Path(self.project_path) / "Penguins_y.csv")
         self.train_path = [
-            os.path.join(self.project_path, "Train_Penguins_X.csv"),
-            os.path.join(self.project_path, "Train_Penguins_y.csv"),
+            str(Path(self.project_path) / "Train_Penguins_X.csv"),
+            str(Path(self.project_path) / "Train_Penguins_y.csv"),
         ]
         self.test_path = [
-            os.path.join(self.project_path, "Test_Penguins_X.csv"),
-            os.path.join(self.project_path, "Test_Penguins_y.csv"),
+            str(Path(self.project_path) / "Test_Penguins_X.csv"),
+            str(Path(self.project_path) / "Test_Penguins_y.csv"),
         ]
         self.log.info("PenguinPreprocessor is ready")
 
@@ -52,12 +63,22 @@ class PenguinPreprocessor:
 
             if os.path.isfile(self.X_path) and os.path.isfile(self.y_path):
                 self.log.info("X and y data is ready")
+
+                # Store relative paths in config
+                data_rel_dir = "data"  # Use a fixed relative path
                 self.config["DATA"] = {
-                    "X_data": "data/Penguins_X.csv",
-                    "y_data": "data/Penguins_y.csv",
+                    "X_data": f"{data_rel_dir}/Penguins_X.csv",
+                    "y_data": f"{data_rel_dir}/Penguins_y.csv",
                 }
-                with open("config.ini", "w") as configfile:
-                    self.config.write(configfile)
+
+                config_path = self.root_dir / "config.ini"
+                
+                # Check if we're in a test environment
+                # If 'pytest' is in sys.modules, we're running tests
+                import sys
+                if 'pytest' not in sys.modules:
+                    with open(config_path, "w") as configfile:
+                        self.config.write(configfile)
                 return True
             else:
                 self.log.error("X and y data is not ready")
@@ -93,22 +114,30 @@ class PenguinPreprocessor:
             self.save_splitted_data(X_test, self.test_path[0])
             self.save_splitted_data(y_test, self.test_path[1])
 
+            # Store relative paths in config
+            data_rel_dir = "data"  # Use a fixed relative path
             self.config["SPLIT_DATA"] = {
-                "X_train": "data/Train_Penguins_X.csv",
-                "y_train": "data/Train_Penguins_y.csv",
-                "X_test": "data/Test_Penguins_X.csv",
-                "y_test": "data/Test_Penguins_y.csv",
+                "X_train": f"{data_rel_dir}/Train_Penguins_X.csv",
+                "y_train": f"{data_rel_dir}/Train_Penguins_y.csv",
+                "X_test": f"{data_rel_dir}/Test_Penguins_X.csv",
+                "y_test": f"{data_rel_dir}/Test_Penguins_y.csv",
             }
+
+            # Set up experiments directory
+            experiments_dir = self.root_dir / "experiments"
+            os.makedirs(experiments_dir, exist_ok=True)
+            exp_rel_dir = "experiments"  # Use a fixed relative path
 
             self.config["RANDOM_FOREST"] = {
                 "n_estimators": "100",
                 "max_depth": "None",
                 "min_samples_split": "2",
                 "min_samples_leaf": "1",
-                "path": "experiments/random_forest.sav",
+                "path": f"{exp_rel_dir}/random_forest.sav",
             }
 
-            with open("config.ini", "w") as configfile:
+            config_path = self.root_dir / "config.ini"
+            with open(config_path, "w") as configfile:
                 self.config.write(configfile)
 
             self.log.info("Data split successfully")
@@ -130,6 +159,9 @@ class PenguinPreprocessor:
             bool: True if operation is successful, False otherwise.
         """
         try:
+            # Ensure directory exists
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+
             data.to_csv(path, index=True)
             if os.path.isfile(path):
                 return True

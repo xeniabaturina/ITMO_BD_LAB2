@@ -6,8 +6,9 @@ import traceback
 import json
 import datetime
 from flask import Flask, request, jsonify
+from pathlib import Path
 
-from logger import Logger
+from src.logger import Logger
 
 SHOW_LOG = True
 app = Flask(__name__)
@@ -22,9 +23,13 @@ class ModelService:
 
     def __init__(self):
         self.config = configparser.ConfigParser()
-        self.config.read("config.ini")
-        self.project_path = os.path.join(os.getcwd(), "experiments")
-        self.model_path = os.path.join(self.project_path, "random_forest.sav")
+        # Get the project root directory (assuming src is one level below root)
+        self.root_dir = Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        config_path = self.root_dir / "config.ini"
+        self.config.read(str(config_path))
+        
+        self.project_path = str(self.root_dir / "experiments")
+        self.model_path = str(Path(self.project_path) / "random_forest.sav")
 
         try:
             with open(self.model_path, "rb") as f:
@@ -119,7 +124,9 @@ class ModelService:
 
 def log_request(request_data, response_data, endpoint):
     """Log API requests and responses to a file."""
-    log_dir = os.path.join(os.getcwd(), "logs")
+    # Get the project root directory (assuming src is one level below root)
+    root_dir = Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    log_dir = str(root_dir / "logs")
     os.makedirs(log_dir, exist_ok=True)
 
     log_file = os.path.join(

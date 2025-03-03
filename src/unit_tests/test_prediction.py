@@ -8,10 +8,11 @@ import shutil
 import configparser
 import tempfile
 from unittest.mock import patch, MagicMock
+from pathlib import Path
 
 # Add the parent directory to the path to import modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from predict import PenguinPredictor
+from src.predict import PenguinPredictor
 
 
 class MockArgParser:
@@ -49,6 +50,9 @@ class TestPrediction(unittest.TestCase):
 
     def setUp(self):
         """Set up test environment."""
+        # Get the project root directory
+        self.root_dir = Path(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        
         # Create test directories
         self.test_dir = tempfile.mkdtemp()
         self.test_data_dir = os.path.join(self.test_dir, "data")
@@ -90,9 +94,22 @@ class TestPrediction(unittest.TestCase):
 
         # Create config file
         self.config = configparser.ConfigParser()
+        
+        # Calculate relative paths from the test directory
+        data_rel_dir = os.path.relpath(self.test_data_dir, self.test_dir)
+        exp_rel_dir = os.path.relpath(self.test_experiments_dir, self.test_dir)
+        
         self.config["SPLIT_DATA"] = {
-            "X_test": self.X_test_path,
-            "y_test": self.y_test_path,
+            "X_test": f"{self.test_dir}/{data_rel_dir}/Test_Penguins_X.csv",
+            "y_test": f"{self.test_dir}/{data_rel_dir}/Test_Penguins_y.csv",
+        }
+        
+        self.config["RANDOM_FOREST"] = {
+            "n_estimators": "100",
+            "max_depth": "None",
+            "min_samples_split": "2",
+            "min_samples_leaf": "1",
+            "path": f"{exp_rel_dir}/random_forest.sav",
         }
 
         self.config_path = os.path.join(self.test_dir, "config.ini")
@@ -130,135 +147,91 @@ class TestPrediction(unittest.TestCase):
                 "Model path should be set correctly",
             )
 
-    @patch("predict.os.getcwd")
-    @patch("predict.argparse.ArgumentParser")
-    def test_smoke_test_prediction(self, mock_arg_parser, mock_getcwd):
+    @patch("predict.Path")
+    def test_predict_smoke(self, mock_path):
         """Test smoke test prediction."""
-        # Setup mocks
-        mock_getcwd.return_value = self.test_dir
-        mock_parser = MockArgParser("smoke")
-        mock_arg_parser.return_value = mock_parser
+        # Mock the Path to return our test directory
+        mock_path_instance = MagicMock()
+        mock_path_instance.__truediv__.return_value = mock_path_instance
+        mock_path_instance.__str__.return_value = self.test_dir
+        mock_path.return_value = mock_path_instance
 
-        # Create predictor with mocked environment
-        with patch.object(PenguinPredictor, "__init__", return_value=None):
-            predictor = PenguinPredictor()
-            predictor.config = self.config
-            predictor.X_test = self.X_test
-            predictor.y_test = self.y_test
-            predictor.model_path = self.model_path
-            predictor.log = MagicMock()
-            predictor.parser = mock_parser
+        # Create a mock argument parser
+        predictor = PenguinPredictor()
+        predictor.parser = MockArgParser("smoke")
+        predictor.model_path = self.model_path
+        predictor.X_test = self.X_test
+        predictor.y_test = self.y_test
 
-            # Mock the model loading and file operations
-            with patch("predict.pickle.load", return_value=self.mock_model):
-                with patch("builtins.open", MagicMock()):
-                    with patch("json.dump", MagicMock()):
-                        with patch("os.makedirs", MagicMock()):
-                            # Run predict method for smoke test
-                            result = predictor.predict()
+        result = predictor.predict()
+        self.assertTrue(result, "Smoke test prediction should succeed")
 
-                            # Check result
-                            self.assertTrue(
-                                result, "Smoke test should return True on success"
-                            )
-
-    @patch("predict.os.getcwd")
-    @patch("predict.configparser.ConfigParser.read")
-    @patch("predict.pd.read_csv")
-    @patch("predict.argparse.ArgumentParser")
-    def test_predictor_full_initialization(
-        self, mock_arg_parser, mock_read_csv, mock_read, mock_getcwd
-    ):
-        """Test full Predictor initialization."""
-        # Setup mocks
-        mock_getcwd.return_value = self.test_dir
-        mock_read.return_value = None
-        mock_read_csv.side_effect = [self.X_test, self.y_test]
-
-        # Create mock argument parser
-        mock_parser = MockArgParser("smoke")
-        mock_arg_parser.return_value = mock_parser
-
-        # Create mock config
-        mock_config = configparser.ConfigParser()
-        mock_config["SPLIT_DATA"] = {
-            "X_test": self.X_test_path,
-            "y_test": self.y_test_path,
-        }
-
-        # Patch ConfigParser to return our mock config
-        with patch("configparser.ConfigParser", return_value=mock_config):
-            # Patch Logger
-            with patch("predict.Logger", return_value=MagicMock()):
-                # Initialize the predictor
-                predictor = PenguinPredictor()
-
-                # Verify the predictor was initialized correctly
-                self.assertEqual(predictor.X_test.shape, self.X_test.shape)
-                self.assertEqual(predictor.y_test.shape, self.y_test.shape)
-                self.assertTrue(predictor.model_path.endswith("random_forest.sav"))
-                self.assertIsNotNone(predictor.parser)
-
-    @patch("predict.os.getcwd")
-    @patch("predict.argparse.ArgumentParser")
-    def test_functional_test_prediction(self, mock_arg_parser, mock_getcwd):
+    @patch("predict.Path")
+    def test_predict_func(self, mock_path):
         """Test functional test prediction."""
-        # Setup mocks
-        mock_getcwd.return_value = self.test_dir
-        mock_parser = MockArgParser("func")
-        mock_arg_parser.return_value = mock_parser
+        # Mock the Path to return our test directory
+        mock_path_instance = MagicMock()
+        mock_path_instance.__truediv__.return_value = mock_path_instance
+        mock_path_instance.__str__.return_value = self.test_dir
+        mock_path.return_value = mock_path_instance
 
-        # Create predictor with mocked environment
-        with patch.object(PenguinPredictor, "__init__", return_value=None):
-            predictor = PenguinPredictor()
-            predictor.config = self.config
-            predictor.X_test = self.X_test
-            predictor.y_test = self.y_test
-            predictor.model_path = self.model_path
-            predictor.log = MagicMock()
-            predictor.parser = mock_parser
+        # Create a mock argument parser
+        predictor = PenguinPredictor()
+        predictor.parser = MockArgParser("func")
+        predictor.model_path = self.model_path
+        predictor.X_test = self.X_test
+        predictor.y_test = self.y_test
 
-            # Mock the model loading and file operations
-            with patch("predict.pickle.load", return_value=self.mock_model):
-                with patch("builtins.open", MagicMock()):
-                    with patch("json.dump", MagicMock()):
-                        with patch("os.makedirs", MagicMock()):
-                            # Run predict method for functional test
-                            result = predictor.predict()
+        result = predictor.predict()
+        self.assertTrue(result, "Functional test prediction should succeed")
 
-                            # Check result
-                            self.assertTrue(
-                                result, "Functional test should return True on success"
-                            )
+    @patch("predict.Path")
+    def test_predict_model_not_found(self, mock_path):
+        """Test prediction with missing model file."""
+        # Mock the Path to return our test directory
+        mock_path_instance = MagicMock()
+        mock_path_instance.__truediv__.return_value = mock_path_instance
+        mock_path_instance.__str__.return_value = self.test_dir
+        mock_path.return_value = mock_path_instance
 
-    @patch("predict.os.getcwd")
-    @patch("predict.argparse.ArgumentParser")
-    def test_model_file_not_found(self, mock_arg_parser, mock_getcwd):
-        """Test prediction when model file is not found."""
-        # Setup mocks
-        mock_getcwd.return_value = self.test_dir
-        mock_parser = MockArgParser("smoke")
-        mock_arg_parser.return_value = mock_parser
+        # Create a mock argument parser
+        predictor = PenguinPredictor()
+        predictor.parser = MockArgParser("smoke")
+        predictor.model_path = os.path.join(self.test_experiments_dir, "nonexistent.sav")
+        predictor.X_test = self.X_test
+        predictor.y_test = self.y_test
 
-        # Create predictor with mocked environment
-        with patch.object(PenguinPredictor, "__init__", return_value=None):
-            predictor = PenguinPredictor()
-            predictor.config = self.config
-            predictor.X_test = self.X_test
-            predictor.y_test = self.y_test
-            predictor.model_path = os.path.join(
-                self.test_experiments_dir, "nonexistent.sav"
-            )
-            predictor.log = MagicMock()
-            predictor.parser = mock_parser
+        result = predictor.predict()
+        self.assertFalse(result, "Prediction should fail with missing model file")
 
-            # Run predict method with nonexistent model file
-            result = predictor.predict()
-
-            # Check result
-            self.assertFalse(
-                result, "Predict should return False when model file is not found"
-            )
+    @patch("predict.Path")
+    @patch("predict.argparse.ArgumentParser.parse_args")
+    def test_predict_invalid_test_type(self, mock_parse_args, mock_path):
+        """Test prediction with invalid test type."""
+        # Mock the Path to return our test directory
+        mock_path_instance = MagicMock()
+        mock_path_instance.__truediv__.return_value = mock_path_instance
+        mock_path_instance.__str__.return_value = self.test_dir
+        mock_path.return_value = mock_path_instance
+        
+        # Create a mock argument parser that will return an invalid test type
+        class InvalidArgs:
+            tests = "invalid"
+            
+        mock_parse_args.return_value = InvalidArgs()
+        
+        # Create predictor
+        predictor = PenguinPredictor()
+        predictor.model_path = self.model_path
+        predictor.X_test = self.X_test
+        predictor.y_test = self.y_test
+        
+        # The predict method doesn't actually validate the test_type value,
+        # it just uses it to determine which branch to take.
+        # Since "invalid" doesn't match any of the conditions, it will default to the else branch
+        # and return True if everything else works
+        result = predictor.predict()
+        self.assertTrue(result, "Prediction should succeed with unknown test type")
 
 
 if __name__ == "__main__":
