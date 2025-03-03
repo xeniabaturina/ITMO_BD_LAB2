@@ -169,14 +169,36 @@ jobs:
     - name: Pull Docker image
       id: docker_pull
       run: |
+        # List available Docker images to debug
+        echo "Available Docker images:"
+        docker images
+        
+        # Try to authenticate with DockerHub
+        echo "Logging in to DockerHub..."
+        docker login -u ${{ secrets.DOCKERHUB_USERNAME }} -p ${{ secrets.DOCKERHUB_TOKEN }}
+        
+        # List repositories on DockerHub
+        echo "Available repositories on DockerHub for ${{ secrets.DOCKERHUB_USERNAME }}:"
+        curl -s -H "Authorization: JWT ${{ secrets.DOCKERHUB_TOKEN }}" "https://hub.docker.com/v2/repositories/${{ secrets.DOCKERHUB_USERNAME }}/" | jq -r '.results[].name'
+        
+        # Try to pull the image with explicit tag
         echo "Attempting to pull Docker image: ${{ secrets.DOCKERHUB_USERNAME }}/penguin-classifier:${{ needs.prepare-deployment.outputs.image_tag }}"
         if ! docker pull ${{ secrets.DOCKERHUB_USERNAME }}/penguin-classifier:${{ needs.prepare-deployment.outputs.image_tag }}; then
-          echo "::error::Failed to pull Docker image. This could be due to authentication issues or the image not being available."
-          echo "::error::Please check your DockerHub credentials in GitHub Secrets (DOCKERHUB_USERNAME and DOCKERHUB_TOKEN)."
-          echo "::error::If you haven't created a DockerHub repository yet, please create one at https://hub.docker.com/repositories"
-          exit 1
+          echo "Failed with specific tag, trying 'latest' tag..."
+          if ! docker pull ${{ secrets.DOCKERHUB_USERNAME }}/penguin-classifier:latest; then
+            echo "::error::Failed to pull Docker image. This could be due to authentication issues or the image not being available."
+            echo "::error::Please check your DockerHub credentials in GitHub Secrets (DOCKERHUB_USERNAME and DOCKERHUB_TOKEN)."
+            echo "::error::If you haven't created a DockerHub repository yet, please create one at https://hub.docker.com/repositories"
+            exit 1
+          else
+            echo "Successfully pulled with 'latest' tag"
+            echo "IMAGE_TAG=latest" >> $GITHUB_ENV
+          fi
+        else
+          echo "Successfully pulled with specific tag"
+          echo "IMAGE_TAG=${{ needs.prepare-deployment.outputs.image_tag }}" >> $GITHUB_ENV
         fi
-        echo "Pulled Docker image: ${{ secrets.DOCKERHUB_USERNAME }}/penguin-classifier:${{ needs.prepare-deployment.outputs.image_tag }}"
+        echo "Pulled Docker image: ${{ secrets.DOCKERHUB_USERNAME }}/penguin-classifier:${IMAGE_TAG:-${{ needs.prepare-deployment.outputs.image_tag }}}"
         
     - name: Deploy container
       id: deploy_container
@@ -184,6 +206,9 @@ jobs:
         # Stop any running container with the same name
         docker stop penguin-classifier || true
         docker rm penguin-classifier || true
+        
+        # Show the image we're going to use
+        echo "Using Docker image: ${{ secrets.DOCKERHUB_USERNAME }}/penguin-classifier:${IMAGE_TAG:-${{ needs.prepare-deployment.outputs.image_tag }}}"
         
         # Run the container
         docker run -d \
@@ -194,9 +219,16 @@ jobs:
           -v $(pwd)/results:/app/results \
           -v $(pwd)/experiments:/app/experiments \
           -v $(pwd)/config.ini:/app/config.ini \
-          ${{ secrets.DOCKERHUB_USERNAME }}/penguin-classifier:${{ needs.prepare-deployment.outputs.image_tag }}
+          ${{ secrets.DOCKERHUB_USERNAME }}/penguin-classifier:${IMAGE_TAG:-${{ needs.prepare-deployment.outputs.image_tag }}}
           
-        echo "Deployed container from image: ${{ secrets.DOCKERHUB_USERNAME }}/penguin-classifier:${{ needs.prepare-deployment.outputs.image_tag }}"
+        echo "Deployed container from image: ${{ secrets.DOCKERHUB_USERNAME }}/penguin-classifier:${IMAGE_TAG:-${{ needs.prepare-deployment.outputs.image_tag }}}"
+        
+        # Check if container is running and show logs for debugging
+        echo "Container status:"
+        docker ps -a | grep penguin-classifier || true
+        
+        echo "Container logs:"
+        docker logs penguin-classifier || true
         
         # Check if container is running
         if docker ps | grep penguin-classifier; then
@@ -209,7 +241,23 @@ jobs:
     - name: Wait for API to be ready
       run: |
         echo "Waiting for API to be ready..."
+        
+        # Check container status before waiting
+        echo "Container status before waiting:"
+        docker ps -a | grep penguin-classifier || true
+        
+        # Try to get container IP
+        CONTAINER_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' penguin-classifier)
+        echo "Container IP: $CONTAINER_IP"
+        
+        # Check if port 5000 is open
+        echo "Checking if port 5000 is open:"
+        netstat -tulpn | grep 5000 || true
+        
         for i in {1..30}; do
+          echo "Attempt $i: Trying to reach health endpoint..."
+          curl -v http://localhost:5000/health || true
+          
           if curl -s http://localhost:5000/health | grep -q "healthy"; then
             echo "API is ready!"
             break
@@ -218,7 +266,10 @@ jobs:
           sleep 2
           if [ $i -eq 30 ]; then
             echo "::error::API did not become ready in time"
-            docker logs penguin-classifier
+            echo "Final container status:"
+            docker ps -a | grep penguin-classifier || true
+            echo "Container logs:"
+            docker logs penguin-classifier || true
             exit 1
           fi
         done
