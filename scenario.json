@@ -79,7 +79,7 @@
         "body_mass_g": 3750.0,
         "sex": "male"
       },
-      "expected_status": 500
+      "expected_status": 400
     }
   ]
 }
