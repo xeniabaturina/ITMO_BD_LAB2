@@ -325,51 +325,28 @@ jobs:
           exit 1
         fi
         
+    - name: Prepare for testing
+      run: |
+        # Copy the scenario_test.py file to the working directory
+        echo "Copying scenario_test.py to the working directory..."
+        cp ${{ github.workspace }}/scenario_test.py ./scenario_test.py
+        
+        # Verify files exist
+        echo "Verifying files exist..."
+        ls -la
+        
     - name: Run integration tests
       run: |
-        # Create a Python script for integration testing
-        cat > integration_test.py << EOF
-        import requests
-        import json
-        import sys
+        # Copy the scenario test script
+        cp scenario_test.py integration_test.py
         
-        def test_health():
-            response = requests.get("http://localhost:5000/health")
-            assert response.status_code == 200
-            data = response.json()
-            assert data["status"] == "healthy"
-            assert data["model_loaded"] == True
-            return True
-            
-        def test_prediction():
-            test_data = {
-                "island": "Biscoe", 
-                "bill_length_mm": 45.2, 
-                "bill_depth_mm": 15.8, 
-                "flipper_length_mm": 215.0, 
-                "body_mass_g": 5400.0, 
-                "sex": "MALE"
-            }
-            response = requests.post("http://localhost:5000/predict", json=test_data)
-            assert response.status_code == 200
-            data = response.json()
-            assert data["success"] == True
-            assert "predicted_species" in data
-            assert "probabilities" in data
-            return True
-            
-        if __name__ == "__main__":
-            try:
-                health_result = test_health()
-                prediction_result = test_prediction()
-                print("All tests passed!")
-                sys.exit(0)
-            except Exception as e:
-                print(f"Test failed: {e}")
-                sys.exit(1)
-        EOF
+        # Verify scenario.json exists
+        if [ ! -f "scenario.json" ]; then
+          echo "Error: scenario.json file not found"
+          exit 1
+        fi
         
-        # Run the integration test
+        echo "Running scenario-based tests from scenario.json..."
         python integration_test.py
         
     - name: Generate deployment report
