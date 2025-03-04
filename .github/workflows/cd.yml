@@ -325,21 +325,8 @@ jobs:
           exit 1
         fi
         
-    - name: Prepare for testing
-      run: |
-        # Copy the scenario_test.py file to the working directory
-        echo "Copying scenario_test.py to the working directory..."
-        cp ${{ github.workspace }}/scenario_test.py ./scenario_test.py
-        
-        # Verify files exist
-        echo "Verifying files exist..."
-        ls -la
-        
     - name: Run integration tests
       run: |
-        # Copy the scenario test script
-        cp scenario_test.py integration_test.py
-        
         # Verify scenario.json exists
         if [ ! -f "scenario.json" ]; then
           echo "Error: scenario.json file not found"
@@ -347,7 +334,7 @@ jobs:
         fi
         
         echo "Running scenario-based tests from scenario.json..."
-        python integration_test.py
+        python scenario_test.py
         
     - name: Generate deployment report
       run: |
