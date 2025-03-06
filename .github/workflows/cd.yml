@@ -217,6 +217,11 @@ jobs:
           -v $(pwd)/results:/app/results \
           -v $(pwd)/experiments:/app/experiments \
           -v $(pwd)/config.ini:/app/config.ini \
+          -e POSTGRES_USER=${{ secrets.POSTGRES_USER }} \
+          -e POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }} \
+          -e POSTGRES_DB=${{ secrets.POSTGRES_DB }} \
+          -e POSTGRES_HOST=${{ secrets.POSTGRES_HOST || 'localhost' }} \
+          -e POSTGRES_PORT=${{ secrets.POSTGRES_PORT || '5432' }} \
           ${{ secrets.DOCKERHUB_USERNAME }}/penguin-classifier:${IMAGE_TAG:-${{ needs.prepare-deployment.outputs.image_tag }}}
           
         echo "Deployed container from image: ${{ secrets.DOCKERHUB_USERNAME }}/penguin-classifier:${IMAGE_TAG:-${{ needs.prepare-deployment.outputs.image_tag }}}"
@@ -329,16 +334,16 @@ jobs:
       run: |
         # Set up PostgreSQL for integration tests
         docker run -d --name test-db \
-          -e POSTGRES_USER=test_user \
-          -e POSTGRES_PASSWORD=test_pass \
-          -e POSTGRES_DB=test_db \
+          -e POSTGRES_USER=${{ secrets.TEST_DB_USER }} \
+          -e POSTGRES_PASSWORD=${{ secrets.TEST_DB_PASSWORD }} \
+          -e POSTGRES_DB=${{ secrets.TEST_DB_NAME }} \
           -p 5432:5432 \
           postgres:15
           
         # Wait for PostgreSQL to be ready
         echo "Waiting for PostgreSQL to be ready..."
         for i in {1..30}; do
-          if docker exec test-db pg_isready -h localhost -U test_user; then
+          if docker exec test-db pg_isready -h localhost -U ${{ secrets.TEST_DB_USER }}; then
             echo "PostgreSQL is ready!"
             break
           fi
@@ -360,9 +365,9 @@ jobs:
         echo "Running database integration tests..."
         docker exec -e POSTGRES_HOST=test-db \
                     -e POSTGRES_PORT=5432 \
-                    -e POSTGRES_USER=test_user \
-                    -e POSTGRES_PASSWORD=test_pass \
-                    -e POSTGRES_DB=test_db \
+                    -e POSTGRES_USER=${{ secrets.TEST_DB_USER }} \
+                    -e POSTGRES_PASSWORD=${{ secrets.TEST_DB_PASSWORD }} \
+                    -e POSTGRES_DB=${{ secrets.TEST_DB_NAME }} \
                     -e PYTHONPATH=/app \
                     penguin-classifier \
                     python -m pytest /app/src/integration_tests/test_database.py -v
@@ -371,9 +376,9 @@ jobs:
         echo "Running API integration tests..."
         docker exec -e POSTGRES_HOST=test-db \
                     -e POSTGRES_PORT=5432 \
-                    -e POSTGRES_USER=test_user \
-                    -e POSTGRES_PASSWORD=test_pass \
-                    -e POSTGRES_DB=test_db \
+                    -e POSTGRES_USER=${{ secrets.TEST_DB_USER }} \
+                    -e POSTGRES_PASSWORD=${{ secrets.TEST_DB_PASSWORD }} \
+                    -e POSTGRES_DB=${{ secrets.TEST_DB_NAME }} \
                     -e PYTHONPATH=/app \
                     penguin-classifier \
                     python -m pytest /app/src/integration_tests/test_api_db.py -v
