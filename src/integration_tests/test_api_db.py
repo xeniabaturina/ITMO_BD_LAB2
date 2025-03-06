@@ -1,15 +1,16 @@
 import json
 import pytest
+import os
 from src.api import app
 from src.database import Base, init_db
 from sqlalchemy import create_engine
 
 # Test database configuration
-TEST_DB_USER = "test_user"
-TEST_DB_PASS = "test_pass"
-TEST_DB_NAME = "test_db"
-TEST_DB_HOST = "localhost"
-TEST_DB_PORT = "5433"
+TEST_DB_USER = os.getenv("POSTGRES_USER", "test_user")
+TEST_DB_PASS = os.getenv("POSTGRES_PASSWORD", "test_pass")
+TEST_DB_NAME = os.getenv("POSTGRES_DB", "test_db")
+TEST_DB_HOST = os.getenv("POSTGRES_HOST", "test-db")
+TEST_DB_PORT = os.getenv("POSTGRES_PORT", "5432")
 
 # Create test database URL
 TEST_DATABASE_URL = f"postgresql://{TEST_DB_USER}:{TEST_DB_PASS}@{TEST_DB_HOST}:{TEST_DB_PORT}/{TEST_DB_NAME}"
@@ -27,8 +28,6 @@ def client():
 def test_db():
     """Set up test database"""
     # Set test environment variables for the Flask app
-    import os
-
     os.environ["POSTGRES_USER"] = TEST_DB_USER
     os.environ["POSTGRES_PASSWORD"] = TEST_DB_PASS
     os.environ["POSTGRES_DB"] = TEST_DB_NAME
