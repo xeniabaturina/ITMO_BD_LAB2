@@ -5,15 +5,33 @@ import pandas as pd
 import traceback
 import json
 import datetime
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, g
 from pathlib import Path
+from contextlib import contextmanager
 
 from .logger import Logger
+from .database import init_db, get_db, save_prediction, PredictionResult
 
 SHOW_LOG = True
 app = Flask(__name__)
 logger = Logger(SHOW_LOG)
 log = logger.get_logger(__name__)
+
+# Initialize database on first request
+db_initialized = False
+
+def get_db_connection():
+    global db_initialized
+    if not db_initialized:
+        init_db()
+        db_initialized = True
+    return next(get_db())
+
+@app.teardown_appcontext
+def close_db(e=None):
+    db = g.pop('db', None)
+    if db is not None:
+        db.close()
 
 
 class ModelService:
@@ -24,10 +42,12 @@ class ModelService:
     def __init__(self):
         self.config = configparser.ConfigParser()
         # Get the project root directory (assuming src is one level below root)
-        self.root_dir = Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        self.root_dir = Path(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
         config_path = self.root_dir / "config.ini"
         self.config.read(str(config_path))
-        
+
         self.project_path = str(self.root_dir / "experiments")
         self.model_path = str(Path(self.project_path) / "random_forest.sav")
 
@@ -68,6 +88,25 @@ class ModelService:
             prob_dict = {
                 label: float(prob) for label, prob in zip(class_labels, probabilities)
             }
+
+            # Get the confidence score for the predicted species
+            confidence = prob_dict[species]
+
+            # Store prediction in database
+            try:
+                db = get_db_connection()
+                save_prediction(
+                    db=db,
+                    culmen_length_mm=data["bill_length_mm"],
+                    culmen_depth_mm=data["bill_depth_mm"],
+                    flipper_length_mm=data["flipper_length_mm"],
+                    body_mass_g=data["body_mass_g"],
+                    predicted_species=species,
+                    confidence=confidence,
+                )
+            except Exception as e:
+                log.error(f"Error saving prediction to database: {e}")
+                # Continue with prediction even if database save fails
 
             return {
                 "success": True,
@@ -150,15 +189,39 @@ model_service = ModelService()
 
 @app.route("/health", methods=["GET"])
 def health_check():
-    """Health check endpoint."""
-    response = {
-        "status": "healthy" if model_service.model is not None else "unhealthy",
-        "model_loaded": model_service.model is not None,
-        "timestamp": datetime.datetime.now().isoformat(),
-    }
+    """
+    Health check endpoint.
+    Returns the status of the API and whether the model is loaded.
+    """
+    try:
+        # Check if database is accessible
+        db_status = "connected"
+        try:
+            get_db_connection()
+        except Exception as e:
+            db_status = f"error: {str(e)}"
+            
+        # Check if model is loaded
+        model_loaded = model_service.model is not None
 
-    status_code = 200 if model_service.model is not None else 500
-    return jsonify(response), status_code
+        # Return health status
+        return jsonify(
+            {
+                "status": "healthy",
+                "model_loaded": model_loaded,
+                "database": db_status,
+                "timestamp": datetime.datetime.now().isoformat(),
+            }
+        )
+    except Exception as e:
+        log.error(f"Health check failed: {str(e)}")
+        return jsonify(
+            {
+                "status": "unhealthy",
+                "error": str(e),
+                "timestamp": datetime.datetime.now().isoformat(),
+            }
+        ), 500
 
 
 @app.route("/predict", methods=["POST"])
@@ -234,6 +297,71 @@ def predict():
         response = {"success": False, "error": str(e), "error_type": "server_error"}
         log_request(request_data, response, "predict")
         return jsonify(response), 500
+
+
+@app.route("/predictions", methods=["GET"])
+def get_predictions():
+    """
+    Retrieve prediction history from the database.
+    Optional query parameters:
+    - limit: maximum number of predictions to return (default: 100)
+    - offset: number of predictions to skip (default: 0)
+    """
+    try:
+        limit = min(int(request.args.get("limit", 100)), 1000)
+        offset = int(request.args.get("offset", 0))
+
+        log.info(f"Retrieving predictions with limit={limit}, offset={offset}")
+
+        try:
+            with contextmanager(get_db_connection()) as db:
+                log.info("Database connection established")
+                # Get predictions ordered by timestamp
+                results = (
+                    db.query(PredictionResult)
+                    .order_by(PredictionResult.timestamp.desc())
+                    .offset(offset)
+                    .limit(limit)
+                    .all()
+                )
+
+                log.info(f"Retrieved {len(results)} predictions from database")
+
+                predictions = []
+                for result in results:
+                    predictions.append(
+                        {
+                            "id": result.id,
+                            "timestamp": result.timestamp.isoformat(),
+                            "culmen_length_mm": result.culmen_length_mm,
+                            "culmen_depth_mm": result.culmen_depth_mm,
+                            "flipper_length_mm": result.flipper_length_mm,
+                            "body_mass_g": result.body_mass_g,
+                            "predicted_species": result.predicted_species,
+                            "confidence": result.confidence,
+                        }
+                    )
+
+                return jsonify(
+                    {
+                        "success": True,
+                        "predictions": predictions,
+                        "count": len(predictions),
+                        "offset": offset,
+                        "limit": limit,
+                    }
+                ), 200
+        except Exception as db_error:
+            log.error(f"Database error: {db_error}")
+            log.error(traceback.format_exc())
+            raise
+
+    except Exception as e:
+        log.error(f"Error retrieving predictions: {e}")
+        log.error(traceback.format_exc())
+        return jsonify(
+            {"success": False, "error": str(e), "error_type": "server_error"}
+        ), 500
 
 
 if __name__ == "__main__":
