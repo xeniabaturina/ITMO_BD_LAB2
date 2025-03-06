@@ -17,8 +17,10 @@ app = Flask(__name__)
 logger = Logger(SHOW_LOG)
 log = logger.get_logger(__name__)
 
-# Initialize database on startup
-init_db()
+
+@app.before_first_request
+def initialize_database():
+    init_db()
 
 
 class ModelService:
