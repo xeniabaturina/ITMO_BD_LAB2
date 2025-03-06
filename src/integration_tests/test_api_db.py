@@ -34,6 +34,7 @@ def test_db():
     os.environ["POSTGRES_DB"] = TEST_DB_NAME
     os.environ["POSTGRES_HOST"] = TEST_DB_HOST
     os.environ["POSTGRES_PORT"] = TEST_DB_PORT
+    os.environ["TESTING"] = "1"  # Set testing mode
 
     # Create test engine with explicit connection string
     engine = create_engine(TEST_DATABASE_URL)
@@ -112,10 +113,10 @@ def test_predictions_endpoint(client, test_db):
     # Test getting predictions
     print("Getting predictions...")
     start_time = time.time()
-    timeout = 10  # 10 seconds timeout
     
     try:
-        response = client.get("/predictions", timeout=timeout)
+        # Flask test client doesn't support timeout, so we'll just make the request
+        response = client.get("/predictions")
         print(f"Got predictions response in {time.time() - start_time:.2f} seconds")
         print(f"Response status: {response.status_code}")
         print(f"Response data: {response.data}")

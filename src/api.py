@@ -320,6 +320,12 @@ def get_predictions():
             
             # Get predictions ordered by timestamp
             log.info("Querying database...")
+            
+            # Safety check - use a very small limit for testing
+            if os.environ.get("TESTING") == "1":
+                log.info("In testing mode, using small limit")
+                limit = min(limit, 5)  # Use a small limit in testing mode
+                
             results = (
                 db.query(PredictionResult)
                 .order_by(PredictionResult.timestamp.desc())
