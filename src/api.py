@@ -314,47 +314,53 @@ def get_predictions():
         log.info(f"Retrieving predictions with limit={limit}, offset={offset}")
 
         try:
-            with contextmanager(get_db_connection()) as db:
-                log.info("Database connection established")
-                # Get predictions ordered by timestamp
-                results = (
-                    db.query(PredictionResult)
-                    .order_by(PredictionResult.timestamp.desc())
-                    .offset(offset)
-                    .limit(limit)
-                    .all()
+            db = get_db_connection()
+            log.info("Database connection established")
+            # Get predictions ordered by timestamp
+            results = (
+                db.query(PredictionResult)
+                .order_by(PredictionResult.timestamp.desc())
+                .offset(offset)
+                .limit(limit)
+                .all()
+            )
+
+            log.info(f"Retrieved {len(results)} predictions from database")
+
+            predictions = []
+            for result in results:
+                predictions.append(
+                    {
+                        "id": result.id,
+                        "timestamp": result.timestamp.isoformat(),
+                        "culmen_length_mm": result.culmen_length_mm,
+                        "culmen_depth_mm": result.culmen_depth_mm,
+                        "flipper_length_mm": result.flipper_length_mm,
+                        "body_mass_g": result.body_mass_g,
+                        "predicted_species": result.predicted_species,
+                        "confidence": result.confidence,
+                    }
                 )
 
-                log.info(f"Retrieved {len(results)} predictions from database")
-
-                predictions = []
-                for result in results:
-                    predictions.append(
-                        {
-                            "id": result.id,
-                            "timestamp": result.timestamp.isoformat(),
-                            "culmen_length_mm": result.culmen_length_mm,
-                            "culmen_depth_mm": result.culmen_depth_mm,
-                            "flipper_length_mm": result.flipper_length_mm,
-                            "body_mass_g": result.body_mass_g,
-                            "predicted_species": result.predicted_species,
-                            "confidence": result.confidence,
-                        }
-                    )
-
-                return jsonify(
-                    {
-                        "success": True,
-                        "predictions": predictions,
-                        "count": len(predictions),
-                        "offset": offset,
-                        "limit": limit,
-                    }
-                ), 200
-        except Exception as db_error:
-            log.error(f"Database error: {db_error}")
+            return jsonify(
+                {
+                    "success": True,
+                    "predictions": predictions,
+                    "count": len(predictions),
+                    "offset": offset,
+                    "limit": limit,
+                }
+            )
+        except Exception as e:
+            log.error(f"Database error: {e}")
             log.error(traceback.format_exc())
-            raise
+            return jsonify(
+                {
+                    "success": False,
+                    "error": "Database error",
+                    "error_type": "database_error",
+                }
+            ), 500
 
     except Exception as e:
         log.error(f"Error retrieving predictions: {e}")
