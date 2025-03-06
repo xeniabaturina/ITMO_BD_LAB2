@@ -327,14 +327,64 @@ jobs:
         
     - name: Run integration tests
       run: |
-        # Verify scenario.json exists
-        if [ ! -f "scenario.json" ]; then
-          echo "Error: scenario.json file not found"
-          exit 1
-        fi
+        # Set up PostgreSQL for integration tests
+        docker run -d --name test-db \
+          -e POSTGRES_USER=test_user \
+          -e POSTGRES_PASSWORD=test_pass \
+          -e POSTGRES_DB=test_db \
+          -p 5432:5432 \
+          postgres:15
+          
+        # Wait for PostgreSQL to be ready
+        echo "Waiting for PostgreSQL to be ready..."
+        for i in {1..30}; do
+          if docker exec test-db pg_isready -h localhost -U test_user; then
+            echo "PostgreSQL is ready!"
+            break
+          fi
+          echo "Waiting for PostgreSQL... ($i/30)"
+          sleep 2
+          if [ $i -eq 30 ]; then
+            echo "::error::PostgreSQL did not become ready in time"
+            exit 1
+          fi
+        done
         
+        # Install database dependencies
+        pip install psycopg2-binary SQLAlchemy
+        
+        # Copy integration tests to the container
+        docker cp src/integration_tests penguin-classifier:/app/src/
+        
+        # Run database integration tests
+        echo "Running database integration tests..."
+        docker exec -e POSTGRES_HOST=test-db \
+                    -e POSTGRES_PORT=5432 \
+                    -e POSTGRES_USER=test_user \
+                    -e POSTGRES_PASSWORD=test_pass \
+                    -e POSTGRES_DB=test_db \
+                    -e PYTHONPATH=/app \
+                    penguin-classifier \
+                    python -m pytest /app/src/integration_tests/test_database.py -v
+                    
+        # Run API integration tests
+        echo "Running API integration tests..."
+        docker exec -e POSTGRES_HOST=test-db \
+                    -e POSTGRES_PORT=5432 \
+                    -e POSTGRES_USER=test_user \
+                    -e POSTGRES_PASSWORD=test_pass \
+                    -e POSTGRES_DB=test_db \
+                    -e PYTHONPATH=/app \
+                    penguin-classifier \
+                    python -m pytest /app/src/integration_tests/test_api_db.py -v
+        
+        # Run functional tests
         echo "Running scenario-based tests from scenario.json..."
         python scenario_test.py
+        
+        # Clean up PostgreSQL container
+        docker stop test-db
+        docker rm test-db
         
     - name: Generate deployment report
       run: |
