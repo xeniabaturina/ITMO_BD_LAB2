@@ -332,13 +332,19 @@ jobs:
         
     - name: Run integration tests
       run: |
+        # Create a Docker network for the containers
+        docker network create penguin-test-network
+
         # Set up PostgreSQL for integration tests
         docker run -d --name test-db \
+          --network penguin-test-network \
           -e POSTGRES_USER=${{ secrets.TEST_DB_USER }} \
           -e POSTGRES_PASSWORD=${{ secrets.TEST_DB_PASSWORD }} \
           -e POSTGRES_DB=${{ secrets.TEST_DB_NAME }} \
-          -p 5433:5432 \
           postgres:15
+          
+        # Connect the penguin-classifier container to the network
+        docker network connect penguin-test-network penguin-classifier
           
         # Wait for PostgreSQL to be ready
         echo "Waiting for PostgreSQL to be ready..."
@@ -387,9 +393,10 @@ jobs:
         echo "Running scenario-based tests from scenario.json..."
         python scenario_test.py
         
-        # Clean up PostgreSQL container
+        # Clean up PostgreSQL container and network
         docker stop test-db
         docker rm test-db
+        docker network rm penguin-test-network
         
     - name: Generate deployment report
       run: |
