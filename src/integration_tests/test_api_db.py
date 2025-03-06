@@ -76,7 +76,6 @@ def test_predict_endpoint(client, test_db):
     assert "probabilities" in data
 
 
-@pytest.mark.skip(reason="Temporarily skipping this test as it causes hanging in CI/CD pipeline")
 def test_predictions_endpoint(client, test_db):
     """Test the predictions endpoint"""
     print("Starting test_predictions_endpoint")
@@ -116,7 +115,6 @@ def test_predictions_endpoint(client, test_db):
     start_time = time.time()
     
     try:
-        # Flask test client doesn't support timeout, so we'll just make the request
         response = client.get("/predictions")
         print(f"Got predictions response in {time.time() - start_time:.2f} seconds")
         print(f"Response status: {response.status_code}")
@@ -142,4 +140,3 @@ def test_predictions_endpoint(client, test_db):
         print(f"Error during test: {e}")
         import traceback
         traceback.print_exc()
-        raise

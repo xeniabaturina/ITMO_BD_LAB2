@@ -387,7 +387,7 @@ jobs:
                     -e POSTGRES_DB=${{ secrets.TEST_DB_NAME }} \
                     -e PYTHONPATH=/app \
                     penguin-classifier \
-                    python -m pytest /app/src/integration_tests/test_api_db.py -v || echo "API integration tests failed, but continuing..."
+                    python -m pytest /app/src/integration_tests/test_api_db.py -v
         
         # Run functional tests
         echo "Running scenario-based tests from scenario.json..."
