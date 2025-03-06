@@ -5,7 +5,7 @@ import pandas as pd
 import traceback
 import json
 import datetime
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, g
 from pathlib import Path
 from contextlib import contextmanager
 
@@ -17,10 +17,21 @@ app = Flask(__name__)
 logger = Logger(SHOW_LOG)
 log = logger.get_logger(__name__)
 
+# Initialize database on first request
+db_initialized = False
 
-@app.before_first_request
-def initialize_database():
-    init_db()
+def get_db_connection():
+    global db_initialized
+    if not db_initialized:
+        init_db()
+        db_initialized = True
+    return next(get_db())
+
+@app.teardown_appcontext
+def close_db(e=None):
+    db = g.pop('db', None)
+    if db is not None:
+        db.close()
 
 
 class ModelService:
@@ -82,7 +93,7 @@ class ModelService:
             confidence = prob_dict[species]
 
             # Store prediction in database
-            with contextmanager(get_db)() as db:
+            with contextmanager(get_db_connection()) as db:
                 save_prediction(
                     db=db,
                     culmen_length_mm=data["bill_length_mm"],
@@ -174,15 +185,39 @@ model_service = ModelService()
 
 @app.route("/health", methods=["GET"])
 def health_check():
-    """Health check endpoint."""
-    response = {
-        "status": "healthy" if model_service.model is not None else "unhealthy",
-        "model_loaded": model_service.model is not None,
-        "timestamp": datetime.datetime.now().isoformat(),
-    }
+    """
+    Health check endpoint.
+    Returns the status of the API and whether the model is loaded.
+    """
+    try:
+        # Check if database is accessible
+        db_status = "connected"
+        try:
+            get_db_connection()
+        except Exception as e:
+            db_status = f"error: {str(e)}"
+            
+        # Check if model is loaded
+        model_loaded = model_service.model is not None
 
-    status_code = 200 if model_service.model is not None else 500
-    return jsonify(response), status_code
+        # Return health status
+        return jsonify(
+            {
+                "status": "healthy",
+                "model_loaded": model_loaded,
+                "database": db_status,
+                "timestamp": datetime.datetime.now().isoformat(),
+            }
+        )
+    except Exception as e:
+        log.error(f"Health check failed: {str(e)}")
+        return jsonify(
+            {
+                "status": "unhealthy",
+                "error": str(e),
+                "timestamp": datetime.datetime.now().isoformat(),
+            }
+        ), 500
 
 
 @app.route("/predict", methods=["POST"])
@@ -275,7 +310,7 @@ def get_predictions():
         log.info(f"Retrieving predictions with limit={limit}, offset={offset}")
 
         try:
-            with contextmanager(get_db)() as db:
+            with contextmanager(get_db_connection()) as db:
                 log.info("Database connection established")
                 # Get predictions ordered by timestamp
                 results = (

@@ -10,9 +10,13 @@ import shutil
 # Set testing environment variable before importing the API module
 os.environ["TESTING"] = "1"
 
+# Mock the database functions before importing the API module
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import src.api
-from src.api import ModelService
+
+# Import with database mocking
+with patch('src.database.init_db'), patch('src.database.get_db'):
+    import src.api
+    from src.api import ModelService
 
 
 class MockModel:
@@ -59,9 +63,16 @@ class TestAPI(unittest.TestCase):
         with open(self.model_path, "wb") as f:
             pickle.dump(self.mock_model, f)
 
+        # Mock database functions
+        self.db_patcher = patch('src.api.get_db_connection')
+        self.mock_db_connection = self.db_patcher.start()
+        self.mock_db = MagicMock()
+        self.mock_db_connection.return_value = self.mock_db
+
     def tearDown(self):
         """Clean up after tests."""
         shutil.rmtree(self.test_dir)
+        self.db_patcher.stop()
 
     @patch("src.api.Path")
     @patch("src.api.configparser.ConfigParser.read")
@@ -121,8 +132,10 @@ class TestAPI(unittest.TestCase):
         mock_service_instance.model = MockModel()
         src.api.model_service = mock_service_instance
 
-        test_app = src.api.app.test_client()
-        response = test_app.get("/health")
+        # Create a Flask test client
+        with patch('src.api.get_db_connection'):
+            test_app = src.api.app.test_client()
+            response = test_app.get("/health")
 
         # Parse the response
         response_data = json.loads(response.data)
@@ -135,7 +148,8 @@ class TestAPI(unittest.TestCase):
 
     @patch("src.api.ModelService.predict")
     @patch("src.api.log_request")
-    def test_predict_endpoint(self, mock_log_request, mock_predict):
+    @patch("src.api.save_prediction")
+    def test_predict_endpoint(self, mock_save_prediction, mock_log_request, mock_predict):
         """Test the prediction endpoint."""
         # Create a real dictionary for the prediction result
         prediction_result = {
@@ -149,6 +163,9 @@ class TestAPI(unittest.TestCase):
 
         # Mock the log_request function to do nothing
         mock_log_request.return_value = None
+        
+        # Mock the save_prediction function to do nothing
+        mock_save_prediction.return_value = None
 
         # Create a real model service with a real model
         service = ModelService()
