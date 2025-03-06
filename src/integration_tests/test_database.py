@@ -7,8 +7,8 @@ from src.database import Base, PredictionResult
 TEST_DB_USER = "test_user"
 TEST_DB_PASS = "test_pass"
 TEST_DB_NAME = "test_db"
-TEST_DB_HOST = "test-db"
-TEST_DB_PORT = "5432"
+TEST_DB_HOST = "localhost"
+TEST_DB_PORT = "5433"
 
 # Create test database URL
 TEST_DATABASE_URL = f"postgresql://{TEST_DB_USER}:{TEST_DB_PASS}@{TEST_DB_HOST}:{TEST_DB_PORT}/{TEST_DB_NAME}"

@@ -337,7 +337,7 @@ jobs:
           -e POSTGRES_USER=${{ secrets.TEST_DB_USER }} \
           -e POSTGRES_PASSWORD=${{ secrets.TEST_DB_PASSWORD }} \
           -e POSTGRES_DB=${{ secrets.TEST_DB_NAME }} \
-          -p 5432:5432 \
+          -p 5433:5432 \
           postgres:15
           
         # Wait for PostgreSQL to be ready
