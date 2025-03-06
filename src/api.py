@@ -93,7 +93,8 @@ class ModelService:
             confidence = prob_dict[species]
 
             # Store prediction in database
-            with contextmanager(get_db_connection()) as db:
+            try:
+                db = get_db_connection()
                 save_prediction(
                     db=db,
                     culmen_length_mm=data["bill_length_mm"],
@@ -103,6 +104,9 @@ class ModelService:
                     predicted_species=species,
                     confidence=confidence,
                 )
+            except Exception as e:
+                log.error(f"Error saving prediction to database: {e}")
+                # Continue with prediction even if database save fails
 
             return {
                 "success": True,
