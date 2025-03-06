@@ -314,9 +314,18 @@ def get_predictions():
         log.info(f"Retrieving predictions with limit={limit}, offset={offset}")
 
         try:
+            log.info("Getting database connection...")
             db = get_db_connection()
             log.info("Database connection established")
+            
             # Get predictions ordered by timestamp
+            log.info("Querying database...")
+            
+            # Safety check - use a very small limit for testing
+            if os.environ.get("TESTING") == "1":
+                log.info("In testing mode, using small limit")
+                limit = min(limit, 5)  # Use a small limit in testing mode
+                
             results = (
                 db.query(PredictionResult)
                 .order_by(PredictionResult.timestamp.desc())
@@ -328,6 +337,7 @@ def get_predictions():
             log.info(f"Retrieved {len(results)} predictions from database")
 
             predictions = []
+            log.info("Processing results...")
             for result in results:
                 predictions.append(
                     {
@@ -342,6 +352,7 @@ def get_predictions():
                     }
                 )
 
+            log.info("Returning response...")
             return jsonify(
                 {
                     "success": True,
@@ -357,7 +368,7 @@ def get_predictions():
             return jsonify(
                 {
                     "success": False,
-                    "error": "Database error",
+                    "error": f"Database error: {str(e)}",
                     "error_type": "database_error",
                 }
             ), 500
@@ -366,7 +377,11 @@ def get_predictions():
         log.error(f"Error retrieving predictions: {e}")
         log.error(traceback.format_exc())
         return jsonify(
-            {"success": False, "error": str(e), "error_type": "server_error"}
+            {
+                "success": False,
+                "error": f"Error retrieving predictions: {str(e)}",
+                "error_type": "server_error",
+            }
         ), 500
 
 

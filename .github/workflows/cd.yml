@@ -396,7 +396,10 @@ jobs:
         # Clean up PostgreSQL container and network
         docker stop test-db
         docker rm test-db
-        docker network rm penguin-test-network
+        
+        # Disconnect containers from the network before removing it
+        docker network disconnect --force penguin-test-network penguin-classifier || true
+        docker network rm penguin-test-network || true
         
     - name: Generate deployment report
       run: |
