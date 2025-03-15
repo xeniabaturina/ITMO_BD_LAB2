@@ -335,12 +335,12 @@ jobs:
         # Create a Docker network for the containers
         docker network create penguin-test-network
 
-        # Set up PostgreSQL for integration tests
-        docker run -d --name test-db \
+        # Set up PostgreSQL with schemas for both production and testing
+        docker run -d --name postgres-db \
           --network penguin-test-network \
-          -e POSTGRES_USER=${{ secrets.TEST_DB_USER }} \
-          -e POSTGRES_PASSWORD=${{ secrets.TEST_DB_PASSWORD }} \
-          -e POSTGRES_DB=${{ secrets.TEST_DB_NAME }} \
+          -e POSTGRES_USER=${{ secrets.POSTGRES_USER }} \
+          -e POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }} \
+          -e POSTGRES_DB=${{ secrets.POSTGRES_DB }} \
           postgres:15
           
         # Connect the penguin-classifier container to the network
@@ -349,7 +349,7 @@ jobs:
         # Wait for PostgreSQL to be ready
         echo "Waiting for PostgreSQL to be ready..."
         for i in {1..30}; do
-          if docker exec test-db pg_isready -h localhost -U ${{ secrets.TEST_DB_USER }}; then
+          if docker exec postgres-db pg_isready -h localhost -U ${{ secrets.POSTGRES_USER }}; then
             echo "PostgreSQL is ready!"
             break
           fi
@@ -361,6 +361,10 @@ jobs:
           fi
         done
         
+        # Create test schema
+        docker exec postgres-db psql -U ${{ secrets.POSTGRES_USER }} -d ${{ secrets.POSTGRES_DB }} -c "CREATE SCHEMA IF NOT EXISTS test;"
+        docker exec postgres-db psql -U ${{ secrets.POSTGRES_USER }} -d ${{ secrets.POSTGRES_DB }} -c "GRANT ALL ON SCHEMA test TO ${{ secrets.POSTGRES_USER }};"
+        
         # Install database dependencies
         pip install psycopg2-binary SQLAlchemy
         
@@ -369,22 +373,24 @@ jobs:
         
         # Run database integration tests
         echo "Running database integration tests..."
-        docker exec -e POSTGRES_HOST=test-db \
+        docker exec -e POSTGRES_HOST=postgres-db \
                     -e POSTGRES_PORT=5432 \
-                    -e POSTGRES_USER=${{ secrets.TEST_DB_USER }} \
-                    -e POSTGRES_PASSWORD=${{ secrets.TEST_DB_PASSWORD }} \
-                    -e POSTGRES_DB=${{ secrets.TEST_DB_NAME }} \
+                    -e POSTGRES_USER=${{ secrets.POSTGRES_USER }} \
+                    -e POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }} \
+                    -e POSTGRES_DB=${{ secrets.POSTGRES_DB }} \
+                    -e POSTGRES_SCHEMA=test \
                     -e PYTHONPATH=/app \
                     penguin-classifier \
                     python -m pytest /app/src/integration_tests/test_database.py -v
                     
         # Run API integration tests
         echo "Running API integration tests..."
-        docker exec -e POSTGRES_HOST=test-db \
+        docker exec -e POSTGRES_HOST=postgres-db \
                     -e POSTGRES_PORT=5432 \
-                    -e POSTGRES_USER=${{ secrets.TEST_DB_USER }} \
-                    -e POSTGRES_PASSWORD=${{ secrets.TEST_DB_PASSWORD }} \
-                    -e POSTGRES_DB=${{ secrets.TEST_DB_NAME }} \
+                    -e POSTGRES_USER=${{ secrets.POSTGRES_USER }} \
+                    -e POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }} \
+                    -e POSTGRES_DB=${{ secrets.POSTGRES_DB }} \
+                    -e POSTGRES_SCHEMA=test \
                     -e PYTHONPATH=/app \
                     penguin-classifier \
                     python -m pytest /app/src/integration_tests/test_api_db.py -v
@@ -394,8 +400,8 @@ jobs:
         python scenario_test.py
         
         # Clean up PostgreSQL container and network
-        docker stop test-db
-        docker rm test-db
+        docker stop postgres-db
+        docker rm postgres-db
         
         # Disconnect containers from the network before removing it
         docker network disconnect --force penguin-test-network penguin-classifier || true

@@ -3,15 +3,16 @@ import pytest
 import os
 from src.api import app
 from src.database import Base, init_db
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 import time
 
-# Test database configuration
-TEST_DB_USER = os.getenv("POSTGRES_USER", "test_user")
-TEST_DB_PASS = os.getenv("POSTGRES_PASSWORD", "test_pass")
-TEST_DB_NAME = os.getenv("POSTGRES_DB", "test_db")
-TEST_DB_HOST = os.getenv("POSTGRES_HOST", "test-db")
+# Test database configuration - using the same database but different schema
+TEST_DB_USER = os.getenv("POSTGRES_USER")
+TEST_DB_PASS = os.getenv("POSTGRES_PASSWORD")
+TEST_DB_NAME = os.getenv("POSTGRES_DB")
+TEST_DB_HOST = os.getenv("POSTGRES_HOST", "postgres")
 TEST_DB_PORT = os.getenv("POSTGRES_PORT", "5432")
+TEST_DB_SCHEMA = os.getenv("POSTGRES_SCHEMA", "test")
 
 # Create test database URL
 TEST_DATABASE_URL = f"postgresql://{TEST_DB_USER}:{TEST_DB_PASS}@{TEST_DB_HOST}:{TEST_DB_PORT}/{TEST_DB_NAME}"
@@ -34,10 +35,23 @@ def test_db():
     os.environ["POSTGRES_DB"] = TEST_DB_NAME
     os.environ["POSTGRES_HOST"] = TEST_DB_HOST
     os.environ["POSTGRES_PORT"] = TEST_DB_PORT
+    os.environ["POSTGRES_SCHEMA"] = TEST_DB_SCHEMA
     os.environ["TESTING"] = "1"  # Set testing mode
 
     # Create test engine with explicit connection string
     engine = create_engine(TEST_DATABASE_URL)
+    
+    # Set the schema for PostgreSQL
+    @event.listens_for(engine, "connect")
+    def set_search_path(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute(f"SET search_path TO {TEST_DB_SCHEMA}")
+        cursor.close()
+    
+    # Create schema if it doesn't exist
+    with engine.connect() as conn:
+        conn.execute(f"CREATE SCHEMA IF NOT EXISTS {TEST_DB_SCHEMA}")
+        conn.execute("COMMIT")
 
     # Create all tables
     Base.metadata.create_all(engine)
