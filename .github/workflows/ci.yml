@@ -306,6 +306,7 @@ jobs:
         
     - name: Build and push Docker image
       uses: docker/build-push-action@v4
+      id: docker_build
       with:
         context: .
         push: ${{ env.DOCKER_PUSH == 'true' && github.event_name != 'pull_request' }}
@@ -314,9 +315,9 @@ jobs:
     - name: Update dev_sec_ops.yml
       if: env.DOCKER_PUSH == 'true' && github.event_name != 'pull_request'
       run: |
-        # Get Docker image digest
-        DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' ${{ secrets.DOCKERHUB_USERNAME }}/penguin-classifier:latest | cut -d'@' -f2)
-        
+        # Get Docker image digest from the build-push-action output
+        DIGEST="${{ steps.docker_build.outputs.digest }}"
+
         # Get last 5 commit hashes
         COMMITS=$(git log -5 --pretty=format:"%H %s")
         

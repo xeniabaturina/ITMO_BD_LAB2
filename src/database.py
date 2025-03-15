@@ -1,5 +1,5 @@
 import os
-from sqlalchemy import create_engine, Column, Integer, Float, String, DateTime
+from sqlalchemy import create_engine, Column, Integer, Float, String, DateTime, event
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime
@@ -13,6 +13,7 @@ DB_PASS = os.getenv('POSTGRES_PASSWORD')
 DB_NAME = os.getenv('POSTGRES_DB')
 DB_HOST = os.getenv('POSTGRES_HOST', 'postgres')
 DB_PORT = os.getenv('POSTGRES_PORT', '5432')
+DB_SCHEMA = os.getenv('POSTGRES_SCHEMA', 'public')
 
 # Create database URL
 DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
@@ -23,6 +24,8 @@ SessionLocal = None
 
 class PredictionResult(Base):
     __tablename__ = "prediction_results"
+    # Use the schema from environment variable
+    __table_args__ = {'schema': DB_SCHEMA}
 
     id = Column(Integer, primary_key=True, index=True)
     timestamp = Column(DateTime, default=datetime.utcnow)
@@ -48,6 +51,13 @@ def init_db():
     else:
         # Use PostgreSQL for production
         engine = create_engine(DATABASE_URL)
+        
+        # Set the schema for PostgreSQL
+        @event.listens_for(engine, "connect")
+        def set_search_path(dbapi_connection, connection_record):
+            cursor = dbapi_connection.cursor()
+            cursor.execute(f"SET search_path TO {DB_SCHEMA}")
+            cursor.close()
     
     # Create session factory
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
