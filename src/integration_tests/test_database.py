@@ -22,20 +22,27 @@ def test_db():
     # Set the schema in the environment variable
     os.environ["POSTGRES_SCHEMA"] = TEST_DB_SCHEMA
     
-    # Create test engine with explicit connection string
-    engine = create_engine(TEST_DATABASE_URL)
+    # Determine if we should use SQLite or PostgreSQL
+    use_sqlite = os.environ.get("TESTING") == "1"
     
-    # Set the schema for PostgreSQL
-    @event.listens_for(engine, "connect")
-    def set_search_path(dbapi_connection, connection_record):
-        cursor = dbapi_connection.cursor()
-        cursor.execute(f"SET search_path TO {TEST_DB_SCHEMA}")
-        cursor.close()
+    if use_sqlite:
+        # Use SQLite in-memory database for tests
+        engine = create_engine("sqlite:///:memory:")
+    else:
+        # Use PostgreSQL with schema for tests
+        engine = create_engine(TEST_DATABASE_URL)
         
-    # Create schema if it doesn't exist
-    with engine.connect() as conn:
-        conn.execute(f"CREATE SCHEMA IF NOT EXISTS {TEST_DB_SCHEMA}")
-        conn.execute("COMMIT")
+        # Set the schema for PostgreSQL
+        @event.listens_for(engine, "connect")
+        def set_search_path(dbapi_connection, connection_record):
+            cursor = dbapi_connection.cursor()
+            cursor.execute(f"SET search_path TO {TEST_DB_SCHEMA}")
+            cursor.close()
+            
+        # Create schema if it doesn't exist
+        with engine.connect() as conn:
+            conn.execute(f"CREATE SCHEMA IF NOT EXISTS {TEST_DB_SCHEMA}")
+            conn.execute("COMMIT")
 
     # Create all tables
     Base.metadata.create_all(engine)

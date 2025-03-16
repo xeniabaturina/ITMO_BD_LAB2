@@ -392,6 +392,7 @@ jobs:
                     -e POSTGRES_DB=${{ secrets.POSTGRES_DB }} \
                     -e POSTGRES_SCHEMA=test \
                     -e PYTHONPATH=/app \
+                    -e TESTING=1 \
                     penguin-classifier \
                     python -m pytest /app/src/integration_tests/test_api_db.py -v
         
