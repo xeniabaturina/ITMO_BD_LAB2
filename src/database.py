@@ -24,8 +24,9 @@ SessionLocal = None
 
 class PredictionResult(Base):
     __tablename__ = "prediction_results"
-    # Use the schema from environment variable
-    __table_args__ = {'schema': DB_SCHEMA}
+    # Use the schema from environment variable only for PostgreSQL
+    # For SQLite, we'll handle this differently
+    __table_args__ = {'schema': DB_SCHEMA} if not os.environ.get("TESTING") == "1" else {}
 
     id = Column(Integer, primary_key=True, index=True)
     timestamp = Column(DateTime, default=datetime.utcnow)

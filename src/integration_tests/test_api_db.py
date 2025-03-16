@@ -38,31 +38,15 @@ def test_db():
     os.environ["POSTGRES_SCHEMA"] = TEST_DB_SCHEMA
     os.environ["TESTING"] = "1"  # Set testing mode
 
-    # Create test engine with explicit connection string
-    engine = create_engine(TEST_DATABASE_URL)
+    # When TESTING=1, we use SQLite in-memory database
+    # So we don't need to create a PostgreSQL engine or set up schemas
     
-    # Set the schema for PostgreSQL
-    @event.listens_for(engine, "connect")
-    def set_search_path(dbapi_connection, connection_record):
-        cursor = dbapi_connection.cursor()
-        cursor.execute(f"SET search_path TO {TEST_DB_SCHEMA}")
-        cursor.close()
-    
-    # Create schema if it doesn't exist
-    with engine.connect() as conn:
-        conn.execute(f"CREATE SCHEMA IF NOT EXISTS {TEST_DB_SCHEMA}")
-        conn.execute("COMMIT")
-
-    # Create all tables
-    Base.metadata.create_all(engine)
-
-    # Initialize the database
+    # Initialize the database (this will use SQLite in-memory)
     init_db()
 
     yield
 
-    # Cleanup
-    Base.metadata.drop_all(engine)
+    # No need for cleanup with SQLite in-memory as it's discarded automatically
 
 
 def test_predict_endpoint(client, test_db):
